@@ -1205,7 +1205,11 @@ impl Processor {
         amm.target_orders = *amm_target_orders_info.key;
         amm.amm_owner = config_feature::amm_owner::ID;
         amm.lp_amount = liquidity;
-        amm.status = AmmStatus::WaitingTrade.into_u64();
+        amm.status = if init.open_time > (Clock::get()?.unix_timestamp as u64) {
+            AmmStatus::WaitingTrade.into_u64()
+        } else {
+            AmmStatus::SwapOnly.into_u64()
+        };
         amm.reset_flag = AmmResetFlag::ResetYes.into_u64();
 
         Ok(())
@@ -2337,8 +2341,8 @@ impl Processor {
             if (clock.unix_timestamp as u64) < amm.state_data.pool_open_time {
                 return Err(AmmError::InvalidStatus.into());
             } else {
-                amm.status = AmmStatus::Initialized.into_u64();
-                msg!("swap_base_in: WaitingTrade to Initialized");
+                amm.status = AmmStatus::SwapOnly.into_u64();
+                msg!("swap_base_in: WaitingTrade to SwapOnly");
             }
         }
 
@@ -2752,8 +2756,8 @@ impl Processor {
             if (clock.unix_timestamp as u64) < amm.state_data.pool_open_time {
                 return Err(AmmError::InvalidStatus.into());
             } else {
-                amm.status = AmmStatus::Initialized.into_u64();
-                msg!("swap_base_out: WaitingTrade to Initialized");
+                amm.status = AmmStatus::SwapOnly.into_u64();
+                msg!("swap_base_out: WaitingTrade to SwapOnly");
             }
         }
 
@@ -5238,6 +5242,26 @@ impl Processor {
         let mut set_valid = false;
         match AmmParams::from_u64(param as u64) {
             AmmParams::Status => {
+                {
+                    let (market_state, open_orders) = Processor::load_serum_market_order(
+                        market_info,
+                        amm_open_orders_info,
+                        amm_authority_info,
+                        &amm,
+                        false,
+                    )?;
+                    let (shared_pc, shared_coin) = Calculator::calc_exact_vault_in_serum(
+                        &open_orders,
+                        &market_state,
+                        market_event_q_info,
+                        amm_open_orders_info,
+                    )
+                    .unwrap();
+                    if shared_pc != 0 || shared_coin != 0 {
+                        msg!("shared_pc:{}, shared_coin:{}", shared_pc, shared_coin);
+                        return Err(AmmError::InvalidInput.into());
+                    }
+                }
                 let value = match setparams.value {
                     Some(a) => a,
                     None => return Err(AmmError::InvalidInput.into()),
