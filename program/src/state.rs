@@ -217,7 +217,7 @@ pub enum AmmStatus {
     OrderBookOnly = 5u64,
     // pool only can add or remove liquidity and swap, can't plan orders
     SwapOnly = 6u64,
-    // pool status after created and will auto update to Initialized during swap after open_time
+    // pool status after created and will auto update to SwapOnly during swap after open_time
     WaitingTrade = 7u64,
 }
 impl AmmStatus {
