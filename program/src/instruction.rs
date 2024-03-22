@@ -865,8 +865,8 @@ pub fn initialize2(
         AccountMeta::new_readonly(*market, false),
         // user wallet
         AccountMeta::new(*user_wallet, true),
-        AccountMeta::new_readonly(*user_token_coin, false),
-        AccountMeta::new_readonly(*user_token_pc, false),
+        AccountMeta::new(*user_token_coin, false),
+        AccountMeta::new(*user_token_pc, false),
         AccountMeta::new(*user_token_lp, false),
     ];
 
