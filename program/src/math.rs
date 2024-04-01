@@ -323,19 +323,12 @@ impl Calculator {
     pub fn calc_total_without_take_pnl_no_orderbook<'a>(
         pc_amount: u64,
         coin_amount: u64,
-        open_orders: &'a OpenOrders,
         amm: &'a AmmInfo,
     ) -> Result<(u64, u64), AmmError> {
-        let pc_total_in_serum = open_orders.native_pc_total;
-        let coin_total_in_serum = open_orders.native_coin_total;
         let total_pc_without_take_pnl = pc_amount
-            .checked_add(pc_total_in_serum)
-            .ok_or(AmmError::CheckedAddOverflow)?
             .checked_sub(amm.state_data.need_take_pnl_pc)
             .ok_or(AmmError::CheckedSubOverflow)?;
         let total_coin_without_take_pnl = coin_amount
-            .checked_add(coin_total_in_serum)
-            .ok_or(AmmError::CheckedAddOverflow)?
             .checked_sub(amm.state_data.need_take_pnl_coin)
             .ok_or(AmmError::CheckedSubOverflow)?;
         Ok((total_pc_without_take_pnl, total_coin_without_take_pnl))
