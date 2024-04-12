@@ -1848,7 +1848,7 @@ impl Processor {
         let amm_lp_mint_info = next_account_info(account_info_iter)?;
         let amm_coin_vault_info = next_account_info(account_info_iter)?;
         let amm_pc_vault_info = next_account_info(account_info_iter)?;
-        if input_account_len != ACCOUNT_LEN + 2 || input_account_len != ACCOUNT_LEN + 3 {
+        if input_account_len == ACCOUNT_LEN + 2 || input_account_len == ACCOUNT_LEN + 3 {
             let _padding_account_info1 = next_account_info(account_info_iter)?;
             let _padding_account_info2 = next_account_info(account_info_iter)?;
         }
