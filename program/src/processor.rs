@@ -344,10 +344,20 @@ impl Processor {
         // calc pnl
         let mut delta_x: u128;
         let mut delta_y: u128;
-        if x1.checked_mul(y1).unwrap()
-            >= (U256::from(target.calc_pnl_x))
-                .checked_mul(target.calc_pnl_y.into())
-                .unwrap()
+        let calc_pc_amount = Calculator::restore_decimal(
+            target.calc_pnl_x.into(),
+            amm.pc_decimals,
+            amm.sys_decimal_value,
+        );
+        let calc_coin_amount = Calculator::restore_decimal(
+            target.calc_pnl_y.into(),
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+        let pool_pc_amount = U128::from(*total_pc_without_take_pnl);
+        let pool_coin_amount = U128::from(*total_coin_without_take_pnl);
+        if pool_pc_amount.checked_mul(pool_coin_amount).unwrap()
+            >= (calc_pc_amount).checked_mul(calc_coin_amount).unwrap()
         {
             // last k is
             // let last_k: u128 = (target.calc_pnl_x as u128).checked_mul(target.calc_pnl_y as u128).unwrap();
@@ -6492,7 +6502,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_calc_tack_pnl() {
+    fn test_calc_take_pnl() {
         let mut amm = AmmInfo::default();
         amm.initialize(0, 0, 2, 9, 1000000, 1).unwrap();
         let mut target = TargetOrders::default();
@@ -6501,6 +6511,131 @@ mod test {
 
         let mut total_pc_without_take_pnl = 1343675125663;
         let mut total_coin_without_take_pnl = 117837534493793;
+        let x1 = Calculator::normalize_decimal_v2(
+            total_pc_without_take_pnl,
+            amm.pc_decimals,
+            amm.sys_decimal_value,
+        );
+        let y1 = Calculator::normalize_decimal_v2(
+            total_coin_without_take_pnl,
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+
+        let (delta_x, delta_y) = Processor::calc_take_pnl(
+            &target,
+            &mut amm,
+            &mut total_pc_without_take_pnl,
+            &mut total_coin_without_take_pnl,
+            x1.as_u128().into(),
+            y1.as_u128().into(),
+        )
+        .unwrap();
+        println!("delta_x:{}, delta_y:{}", delta_x, delta_y);
+    }
+
+    #[test]
+    fn test_calc_pnl_precision() {
+        // init
+        let mut amm = AmmInfo::default();
+        let init_pc_amount = 5434000000u64;
+        let init_coin_amount = 100000000000000u64;
+        let liquidity = Calculator::to_u64(
+            U128::from(init_pc_amount)
+                .checked_mul(init_coin_amount.into())
+                .unwrap()
+                .integer_sqrt()
+                .as_u128(),
+        )
+        .unwrap();
+        amm.initialize(0, 0, 5, 9, 1000000000, 7803).unwrap();
+        amm.lp_amount = liquidity;
+
+        let x =
+            Calculator::normalize_decimal_v2(5434000000, amm.pc_decimals, amm.sys_decimal_value);
+        let y = Calculator::normalize_decimal_v2(
+            100000000000000,
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+        let mut target = TargetOrders::default();
+        target.calc_pnl_x = x.as_u128();
+        target.calc_pnl_y = y.as_u128();
+        println!(
+             "init_pc_amount:{}, init_coin_amount:{}, liquidity:{}, sys_decimal_value:{}, calc_pnl_x:{}, calc_pnl_y:{}",
+             init_pc_amount, init_coin_amount, liquidity, amm.sys_decimal_value, target.calc_pnl_x, target.calc_pnl_y
+         );
+
+        // withdraw
+        let withdraw_lp = 2577470628u64;
+        let mut total_pc_without_take_pnl = init_pc_amount;
+        let mut total_coin_without_take_pnl = init_coin_amount;
+        let x1 = Calculator::normalize_decimal_v2(
+            total_pc_without_take_pnl,
+            amm.pc_decimals,
+            amm.sys_decimal_value,
+        );
+        let y1 = Calculator::normalize_decimal_v2(
+            total_coin_without_take_pnl,
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+
+        let (delta_x, delta_y) = Processor::calc_take_pnl(
+            &target,
+            &mut amm,
+            &mut total_pc_without_take_pnl,
+            &mut total_coin_without_take_pnl,
+            x1.as_u128().into(),
+            y1.as_u128().into(),
+        )
+        .unwrap();
+        println!("delta_x:{}, delta_y:{}", delta_x, delta_y);
+        // coin_amount / total_coin_amount = amount / lp_mint.supply => coin_amount = total_coin_amount * amount / pool_mint.supply
+        let invariant = InvariantPool {
+            token_input: withdraw_lp,
+            token_total: amm.lp_amount,
+        };
+        let coin_amount = invariant
+            .exchange_pool_to_token(total_coin_without_take_pnl, RoundDirection::Floor)
+            .ok_or(AmmError::CalculationExRateFailure)
+            .unwrap();
+        let pc_amount = invariant
+            .exchange_pool_to_token(total_pc_without_take_pnl, RoundDirection::Floor)
+            .ok_or(AmmError::CalculationExRateFailure)
+            .unwrap();
+
+        amm.lp_amount = amm.lp_amount.checked_sub(withdraw_lp).unwrap();
+        target.calc_pnl_x = x1
+            .checked_sub(Calculator::normalize_decimal_v2(
+                pc_amount,
+                amm.pc_decimals,
+                amm.sys_decimal_value,
+            ))
+            .unwrap()
+            .checked_sub(U128::from(delta_x))
+            .unwrap()
+            .as_u128();
+        target.calc_pnl_y = y1
+            .checked_sub(Calculator::normalize_decimal_v2(
+                coin_amount,
+                amm.coin_decimals,
+                amm.sys_decimal_value,
+            ))
+            .unwrap()
+            .checked_sub(U128::from(delta_y))
+            .unwrap()
+            .as_u128();
+        total_pc_without_take_pnl = total_pc_without_take_pnl.checked_sub(pc_amount).unwrap();
+        total_coin_without_take_pnl = total_coin_without_take_pnl
+            .checked_sub(coin_amount)
+            .unwrap();
+        println!(
+             "withdraw calc_pnl_x:{}, calc_pnl_y:{}, total_pc_without_take_pnl:{}, total_coin_without_take_pnl:{}",
+             target.calc_pnl_x, target.calc_pnl_y, total_pc_without_take_pnl, total_coin_without_take_pnl
+         );
+
+        // withdraw 2
         let x1 = Calculator::normalize_decimal_v2(
             total_pc_without_take_pnl,
             amm.pc_decimals,
