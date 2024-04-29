@@ -157,7 +157,7 @@ pub enum AmmInstruction {
     ///   14. `[]` AMM create pool fee destination Account
     ///   15. `[]` Market program id
     ///   16. `[writable]` Market Account. Market program is the owner.
-    ///   17. `[writable, singer]` User wallet Account
+    ///   17. `[writable, signer]` User wallet Account
     ///   18. `[]` User token coin Account
     ///   19. '[]` User token pc Account
     ///   20. `[writable]` User destination lp token ATA Account
@@ -224,7 +224,7 @@ pub enum AmmInstruction {
     ///   13. `[writable]` User lp token Account.
     ///   14. `[writable]` User token coin Account. user Account to credit.
     ///   15. `[writable]` User token pc Account. user Account to credit.
-    ///   16. `[singer]` User wallet Account
+    ///   16. `[signer]` User wallet Account
     ///   17. `[writable]` Market event queue Account
     ///   18. `[writable]` Market bids Account
     ///   19. `[writable]` Market asks Account
@@ -272,7 +272,7 @@ pub enum AmmInstruction {
     ///   12. `[writable]` Market event queue Account
     ///   13. `[writable]` Market bids Account
     ///   14. `[writable]` Market asks Account
-    ///   15. `[singer]` Admin Account
+    ///   15. `[signer]` Admin Account
     ///   16. `[]` (optional) New AMM open orders Account to replace old AMM open orders Account
     SetParams(SetParamsInstruction),
 
@@ -287,7 +287,7 @@ pub enum AmmInstruction {
     ///   6. `[writable]` AMM pc vault account to withdraw FROM,
     ///   7. `[writable]` User coin token Account to withdraw to
     ///   8. `[writable]` User pc token Account to withdraw to
-    ///   9. `[singer]` User wallet account
+    ///   9. `[signer]` User wallet account
     ///   10. `[writable]` AMM target orders Account
     ///   11. `[]` Market program id
     ///   12. `[writable]` Market Account. Market program is the owner.
@@ -302,7 +302,7 @@ pub enum AmmInstruction {
     ///
     ///   0. `[]` Spl Token program id
     ///   1. `[]` AMM Account.
-    ///   2. `[singer]` Admin wallet Account
+    ///   2. `[signer]` Admin wallet Account
     ///   3. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
     ///   4. `[writable]` the (M)SRM Account withdraw from
     ///   5. `[writable]` the (M)SRM Account withdraw to
@@ -327,7 +327,7 @@ pub enum AmmInstruction {
     ///   14. '[]` Market vault signer Account
     ///   15. `[writable]` User source token Account.
     ///   16. `[writable]` User destination token Account.
-    ///   17. `[singer]` User wallet Account
+    ///   17. `[signer]` User wallet Account
     SwapBaseIn(SwapInstructionBaseIn),
 
     ///   Continue Initializes a new Amm pool because of compute units limit.
@@ -354,7 +354,7 @@ pub enum AmmInstruction {
     ///   14. '[]` Market vault signer Account
     ///   15. `[writable]` User source token Account.
     ///   16. `[writable]` User destination token Account.
-    ///   17. `[singer]` User wallet Account
+    ///   17. `[signer]` User wallet Account
     SwapBaseOut(SwapInstructionBaseOut),
 
     SimulateInfo(SimulateInstruction),
