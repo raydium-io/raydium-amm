@@ -578,7 +578,10 @@ pub struct StateData {
     /// ido pool open time
     pub pool_open_time: u64,
     /// padding for future updates
-    pub padding: [u64; 2],
+    // pub padding: [u64; 2],
+    // based on TypeScript LIQUIDITY_STATE_LAYOUT_V4
+    pub punish_pc_amount: u64,
+    pub punish_coin_amount: u64,
     /// switch from orderbookonly to init
     pub orderbook_to_init_time: u64,
 
@@ -590,9 +593,11 @@ pub struct StateData {
     pub swap_acc_pc_fee: u64,
 
     /// swap pc in amount
-    pub swap_pc_in_amount: u128,
+    pub swap_pc_in_amount: u64,
+    pub padding_some: [u64; 1],
     /// swap coin out amount
-    pub swap_coin_out_amount: u128,
+    pub swap_coin_out_amount: u64,
+    pub padding_some_2: [u64; 1],
     /// charge coin as swap fee while swap coin to pc
     pub swap_acc_coin_fee: u64,
 }
@@ -604,13 +609,14 @@ impl StateData {
         self.total_pnl_pc = 0u64;
         self.total_pnl_coin = 0u64;
         self.pool_open_time = open_time;
-        self.padding = Zeroable::zeroed();
+        self.punish_pc_amount = 0u64;
+        self.punish_coin_amount = 0u64;
         self.orderbook_to_init_time = 0u64;
         self.swap_coin_in_amount = 0u128;
         self.swap_pc_out_amount = 0u128;
         self.swap_acc_pc_fee = 0u64;
-        self.swap_pc_in_amount = 0u128;
-        self.swap_coin_out_amount = 0u128;
+        self.swap_pc_in_amount = 0u64;
+        self.swap_coin_out_amount = 0u64;
         self.swap_acc_coin_fee = 0u64;
 
         Ok(())
@@ -680,15 +686,19 @@ pub struct AmmInfo {
     /// target_orders key
     pub target_orders: Pubkey,
     /// padding
-    pub padding1: [u64; 8],
+    // pub padding1: [u64; 8],
+    // instead of padding (based on TypeScript LIQUIDITY_STATE_LAYOUT_V4)
+    pub withdraw_queue: Pubkey,
+    pub lp_vault: Pubkey,
     /// amm owner key
     pub amm_owner: Pubkey,
     /// pool lp amount
     pub lp_amount: u64,
-    /// client order id
+
     pub client_order_id: u64,
+
     /// padding
-    pub padding2: [u64; 2],
+    pub padding: [u64; 2],
 }
 impl_loadable!(AmmInfo);
 
@@ -819,9 +829,7 @@ impl AmmInfo {
         );
         self.min_price_multiplier = 1;
         self.max_price_multiplier = 1000000000;
-        self.client_order_id = 0;
-        self.padding1 = Zeroable::zeroed();
-        self.padding2 = Zeroable::zeroed();
+        self.padding = Zeroable::zeroed();
 
         Ok(())
     }
