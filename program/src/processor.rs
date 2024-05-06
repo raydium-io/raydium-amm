@@ -901,7 +901,9 @@ impl Processor {
             "sys_program",
             AmmError::InvalidSysProgramAddress
         );
-        if *amm_authority_info.key != Self::authority_id(program_id, AUTHORITY_AMM, init.nonce)? {
+        let (expect_amm_authority, expect_none) =
+            Pubkey::find_program_address(&[&AUTHORITY_AMM], program_id);
+        if *amm_authority_info.key != expect_amm_authority || init.nonce != expect_none {
             return Err(AmmError::InvalidProgramAddress.into());
         }
         if *create_fee_destination_info.key != config_feature::create_pool_fee_address::id() {
@@ -5984,6 +5986,72 @@ impl Processor {
         return Ok(());
     }
 
+    /// Processes `update_pool_vault_authority` instruction.
+    pub fn update_pool_authority(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let admin_info = next_account_info(account_info_iter)?;
+        let amm_info = next_account_info(account_info_iter)?;
+        let old_amm_authority_info = next_account_info(account_info_iter)?;
+        let new_amm_authority_info = next_account_info(account_info_iter)?;
+        let amm_coin_vault_info = next_account_info(account_info_iter)?;
+        let amm_pc_vault_info = next_account_info(account_info_iter)?;
+        let lp_mint_info = next_account_info(account_info_iter)?;
+        let token_program_info = next_account_info(account_info_iter)?;
+        let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
+        if !admin_info.is_signer || config_feature::amm_owner::id() != *admin_info.key {
+            return Err(AmmError::InvalidSignAccount.into());
+        }
+        if *old_amm_authority_info.key
+            != Self::authority_id(program_id, AUTHORITY_AMM, amm.nonce as u8)?
+        {
+            return Err(AmmError::InvalidProgramAddress.into());
+        }
+        let (expect_amm_authority, expect_none) =
+            Pubkey::find_program_address(&[&AUTHORITY_AMM], program_id);
+        if expect_amm_authority != *new_amm_authority_info.key {
+            return Err(AmmError::InvalidProgramAddress.into());
+        }
+
+        if amm.coin_vault != *amm_coin_vault_info.key {
+            return Err(AmmError::InvalidCoinVault.into());
+        }
+        if amm.pc_vault != *amm_pc_vault_info.key {
+            return Err(AmmError::InvalidPCVault.into());
+        }
+        Invokers::token_set_authority(
+            token_program_info.clone(),
+            amm_coin_vault_info.clone(),
+            old_amm_authority_info.clone(),
+            new_amm_authority_info.clone(),
+            AUTHORITY_AMM,
+            amm.nonce as u8,
+            spl_token::instruction::AuthorityType::AccountOwner,
+        )?;
+        Invokers::token_set_authority(
+            token_program_info.clone(),
+            amm_pc_vault_info.clone(),
+            old_amm_authority_info.clone(),
+            new_amm_authority_info.clone(),
+            AUTHORITY_AMM,
+            amm.nonce as u8,
+            spl_token::instruction::AuthorityType::AccountOwner,
+        )?;
+
+        Invokers::token_set_authority(
+            token_program_info.clone(),
+            lp_mint_info.clone(),
+            old_amm_authority_info.clone(),
+            new_amm_authority_info.clone(),
+            AUTHORITY_AMM,
+            amm.nonce as u8,
+            spl_token::instruction::AuthorityType::MintTokens,
+        )?;
+
+        amm.nonce = expect_none as u64;
+
+        return Ok(());
+    }
+
     /// Processes an [Instruction](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = AmmInstruction::unpack(input)?;
@@ -6033,6 +6101,9 @@ impl Processor {
             }
             AmmInstruction::UpdateConfigAccount(config_args) => {
                 Self::process_update_config(program_id, accounts, config_args)
+            }
+            AmmInstruction::UpdatePoolAuthority => {
+                Self::update_pool_authority(program_id, accounts)
             }
         }
     }

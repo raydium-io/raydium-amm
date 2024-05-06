@@ -197,6 +197,28 @@ impl Invokers {
         )
     }
 
+    pub fn token_set_authority<'a>(
+        token_program: AccountInfo<'a>,
+        account: AccountInfo<'a>, // mint or token account
+        authority: AccountInfo<'a>,
+        new_authority: AccountInfo<'a>,
+        amm_seed: &[u8],
+        authority_nonce: u8,
+        authority_type: spl_token::instruction::AuthorityType,
+    ) -> Result<(), ProgramError> {
+        let authority_signature_seeds = [amm_seed, &[authority_nonce]];
+        let signers = &[&authority_signature_seeds[..]];
+        let ix = spl_token::instruction::set_authority(
+            token_program.key,
+            authority.key,
+            Some(new_authority.key),
+            authority_type,
+            authority.key,
+            &[],
+        )?;
+        solana_program::program::invoke_signed(&ix, &[account, authority, token_program], signers)
+    }
+
     /// Issue a dex `InitOpenOrders` instruction
     pub fn invoke_dex_init_open_orders<'a>(
         dex_program: AccountInfo<'a>,

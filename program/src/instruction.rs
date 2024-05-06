@@ -366,6 +366,9 @@ pub enum AmmInstruction {
 
     /// Update amm config account by admin
     UpdateConfigAccount(ConfigArgs),
+
+    /// Fixed the problem of inconsistency in pool vault authority caused by initialization nonce exception
+    UpdatePoolAuthority,
 }
 
 impl AmmInstruction {
@@ -575,6 +578,7 @@ impl AmmInstruction {
                     }
                 }
             }
+            16 => Self::UpdatePoolAuthority,
             _ => return Err(ProgramError::InvalidInstructionData.into()),
         })
     }
@@ -803,6 +807,9 @@ impl AmmInstruction {
                     }
                     _ => return Err(ProgramError::InvalidInstructionData.into()),
                 }
+            }
+            Self::UpdatePoolAuthority => {
+                buf.push(16);
             }
         }
         Ok(buf)
@@ -1703,6 +1710,37 @@ pub fn update_config_account(
         AccountMeta::new_readonly(*admin, true),
         AccountMeta::new(*amm_config, false),
     ];
+    Ok(Instruction {
+        program_id: *amm_program,
+        accounts,
+        data,
+    })
+}
+
+/// Creates an 'update_pool_authority' instruction.
+pub fn update_pool_authority(
+    amm_program: &Pubkey,
+    admin: &Pubkey,
+    amm_pool: &Pubkey,
+    old_amm_authority: &Pubkey,
+    new_amm_authority: &Pubkey,
+    amm_coin_vault: &Pubkey,
+    amm_pc_vault: &Pubkey,
+    lp_mint: &Pubkey,
+) -> Result<Instruction, ProgramError> {
+    let data = AmmInstruction::UpdatePoolAuthority.pack()?;
+
+    let accounts = vec![
+        AccountMeta::new(*admin, true),
+        AccountMeta::new(*amm_pool, false),
+        AccountMeta::new_readonly(*old_amm_authority, false),
+        AccountMeta::new_readonly(*new_amm_authority, false),
+        AccountMeta::new(*amm_coin_vault, false),
+        AccountMeta::new(*amm_pc_vault, false),
+        AccountMeta::new(*lp_mint, false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
     Ok(Instruction {
         program_id: *amm_program,
         accounts,
