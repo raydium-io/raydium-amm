@@ -210,7 +210,7 @@ impl Invokers {
         let signers = &[&authority_signature_seeds[..]];
         let ix = spl_token::instruction::set_authority(
             token_program.key,
-            authority.key,
+            account.key,
             Some(new_authority.key),
             authority_type,
             authority.key,

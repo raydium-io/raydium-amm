@@ -5989,6 +5989,9 @@ impl Processor {
     /// Processes `update_pool_vault_authority` instruction.
     pub fn update_pool_authority(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
+        let token_program_info = next_account_info(account_info_iter)?;
+        let _system_program_info = next_account_info(account_info_iter)?;
+        let _rent_sysvar_info = next_account_info(account_info_iter)?;
         let admin_info = next_account_info(account_info_iter)?;
         let amm_info = next_account_info(account_info_iter)?;
         let old_amm_authority_info = next_account_info(account_info_iter)?;
@@ -5996,7 +5999,10 @@ impl Processor {
         let amm_coin_vault_info = next_account_info(account_info_iter)?;
         let amm_pc_vault_info = next_account_info(account_info_iter)?;
         let lp_mint_info = next_account_info(account_info_iter)?;
-        let token_program_info = next_account_info(account_info_iter)?;
+        let market_program_info = next_account_info(account_info_iter)?;
+        let market_info = next_account_info(account_info_iter)?;
+        let amm_open_orders_info = next_account_info(account_info_iter)?;
+
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
         if !admin_info.is_signer || config_feature::amm_owner::id() != *admin_info.key {
             return Err(AmmError::InvalidSignAccount.into());
@@ -6018,6 +6024,20 @@ impl Processor {
         if amm.pc_vault != *amm_pc_vault_info.key {
             return Err(AmmError::InvalidPCVault.into());
         }
+        if amm.lp_mint != *lp_mint_info.key {
+            return Err(AmmError::InvalidPoolMint.into());
+        }
+        if amm.market_program != *market_program_info.key {
+            return Err(AmmError::InvalidMarketProgram.into());
+        }
+        if amm.market != *market_info.key {
+            return Err(AmmError::InvalidMarket.into());
+        }
+        if amm.open_orders != *amm_open_orders_info.key {
+            return Err(AmmError::InvalidOpenOrders.into());
+        }
+        msg!("old:{}, {}", amm.nonce, old_amm_authority_info.key);
+        msg!("new:{}, {}", expect_none, new_amm_authority_info.key);
         Invokers::token_set_authority(
             token_program_info.clone(),
             amm_coin_vault_info.clone(),
@@ -6047,7 +6067,79 @@ impl Processor {
             spl_token::instruction::AuthorityType::MintTokens,
         )?;
 
+        // close amm open order account
+        Invokers::invoke_dex_close_open_orders(
+            market_program_info.clone(),
+            amm_open_orders_info.clone(),
+            old_amm_authority_info.clone(),
+            admin_info.clone(),
+            market_info.clone(),
+            AUTHORITY_AMM,
+            amm.nonce as u8,
+        )?;
+
         amm.nonce = expect_none as u64;
+
+        return Ok(());
+    }
+
+    /// Processes `create_amm_open_order` instruction.
+    pub fn create_amm_open_order(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let system_program_info = next_account_info(account_info_iter)?;
+        let rent_sysvar_info = next_account_info(account_info_iter)?;
+        let admin_info = next_account_info(account_info_iter)?;
+        let amm_info = next_account_info(account_info_iter)?;
+        let amm_authority_info = next_account_info(account_info_iter)?;
+        let market_program_info = next_account_info(account_info_iter)?;
+        let market_info = next_account_info(account_info_iter)?;
+        let amm_open_orders_info = next_account_info(account_info_iter)?;
+
+        let amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
+        if !admin_info.is_signer || config_feature::amm_owner::id() != *admin_info.key {
+            return Err(AmmError::InvalidSignAccount.into());
+        }
+        let (expect_amm_authority, expect_none) =
+            Pubkey::find_program_address(&[&AUTHORITY_AMM], program_id);
+        if expect_amm_authority != *amm_authority_info.key {
+            return Err(AmmError::InvalidProgramAddress.into());
+        }
+        if expect_none as u64 != amm.nonce {
+            return Err(AmmError::UnknownAmmError.into());
+        }
+
+        if amm.market_program != *market_program_info.key {
+            return Err(AmmError::InvalidMarketProgram.into());
+        }
+        if amm.market != *market_info.key {
+            return Err(AmmError::InvalidMarket.into());
+        }
+        if amm.open_orders != *amm_open_orders_info.key {
+            return Err(AmmError::InvalidOpenOrders.into());
+        }
+
+        // create amm open order account
+        Self::generate_amm_associated_account(
+            program_id,
+            market_program_info.key,
+            market_info,
+            amm_open_orders_info,
+            admin_info,
+            system_program_info,
+            rent_sysvar_info,
+            OPEN_ORDER_ASSOCIATED_SEED,
+            size_of::<serum_dex::state::OpenOrders>() + 12,
+        )?;
+        // init open orders account
+        Invokers::invoke_dex_init_open_orders(
+            market_program_info.clone(),
+            amm_open_orders_info.clone(),
+            amm_authority_info.clone(),
+            market_info.clone(),
+            rent_sysvar_info.clone(),
+            AUTHORITY_AMM,
+            amm.nonce as u8,
+        )?;
 
         return Ok(());
     }
@@ -6105,6 +6197,7 @@ impl Processor {
             AmmInstruction::UpdatePoolAuthority => {
                 Self::update_pool_authority(program_id, accounts)
             }
+            AmmInstruction::CreateAmmOpenOrder => Self::create_amm_open_order(program_id, accounts),
         }
     }
 }
