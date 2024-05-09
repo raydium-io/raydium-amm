@@ -366,6 +366,14 @@ pub enum AmmInstruction {
 
     /// Update amm config account by admin
     UpdateConfigAccount(ConfigArgs),
+
+    /// Fixed the problem of inconsistency in pool vault authority caused by initialization nonce exception
+    UpdatePoolAuthority,
+
+    /// Fixed the problem of inconsistency in pool vault authority caused by initialization nonce exception
+    /// Because the amm_open_orders account can't be recreated after closed in the same tx.
+    /// Must use after UpdatePoolAuthority by admin.
+    CreateAmmOpenOrder,
 }
 
 impl AmmInstruction {
@@ -575,6 +583,8 @@ impl AmmInstruction {
                     }
                 }
             }
+            16 => Self::UpdatePoolAuthority,
+            17 => Self::CreateAmmOpenOrder,
             _ => return Err(ProgramError::InvalidInstructionData.into()),
         })
     }
@@ -803,6 +813,12 @@ impl AmmInstruction {
                     }
                     _ => return Err(ProgramError::InvalidInstructionData.into()),
                 }
+            }
+            Self::UpdatePoolAuthority => {
+                buf.push(16);
+            }
+            Self::CreateAmmOpenOrder => {
+                buf.push(17);
             }
         }
         Ok(buf)
@@ -1703,6 +1719,75 @@ pub fn update_config_account(
         AccountMeta::new_readonly(*admin, true),
         AccountMeta::new(*amm_config, false),
     ];
+    Ok(Instruction {
+        program_id: *amm_program,
+        accounts,
+        data,
+    })
+}
+
+/// Creates an 'update_pool_authority' instruction.
+pub fn update_pool_authority(
+    amm_program: &Pubkey,
+    admin: &Pubkey,
+    amm_pool: &Pubkey,
+    old_amm_authority: &Pubkey,
+    new_amm_authority: &Pubkey,
+    amm_coin_vault: &Pubkey,
+    amm_pc_vault: &Pubkey,
+    lp_mint: &Pubkey,
+    market_program: &Pubkey,
+    market: &Pubkey,
+    amm_open_orders: &Pubkey,
+) -> Result<Instruction, ProgramError> {
+    let data = AmmInstruction::UpdatePoolAuthority.pack()?;
+
+    let accounts = vec![
+        AccountMeta::new_readonly(spl_token::id(), false),
+        AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
+        AccountMeta::new(*admin, true),
+        AccountMeta::new(*amm_pool, false),
+        AccountMeta::new_readonly(*old_amm_authority, false),
+        AccountMeta::new_readonly(*new_amm_authority, false),
+        AccountMeta::new(*amm_coin_vault, false),
+        AccountMeta::new(*amm_pc_vault, false),
+        AccountMeta::new(*lp_mint, false),
+        AccountMeta::new_readonly(*market_program, false),
+        AccountMeta::new_readonly(*market, false),
+        AccountMeta::new(*amm_open_orders, false),
+    ];
+
+    Ok(Instruction {
+        program_id: *amm_program,
+        accounts,
+        data,
+    })
+}
+
+/// Creates an 'create_open_order' instruction.
+pub fn create_open_order(
+    amm_program: &Pubkey,
+    admin: &Pubkey,
+    amm_pool: &Pubkey,
+    amm_authority: &Pubkey,
+    market_program: &Pubkey,
+    market: &Pubkey,
+    amm_open_orders: &Pubkey,
+) -> Result<Instruction, ProgramError> {
+    let data = AmmInstruction::CreateAmmOpenOrder.pack()?;
+
+    let accounts = vec![
+        AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
+        AccountMeta::new(*admin, true),
+        AccountMeta::new(*amm_pool, false),
+        AccountMeta::new_readonly(*amm_authority, false),
+        AccountMeta::new_readonly(*market_program, false),
+        AccountMeta::new_readonly(*market, false),
+        AccountMeta::new(*amm_open_orders, false),
+    ];
+
     Ok(Instruction {
         program_id: *amm_program,
         accounts,
