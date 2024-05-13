@@ -344,10 +344,20 @@ impl Processor {
         // calc pnl
         let mut delta_x: u128;
         let mut delta_y: u128;
-        if x1.checked_mul(y1).unwrap()
-            >= (U256::from(target.calc_pnl_x))
-                .checked_mul(target.calc_pnl_y.into())
-                .unwrap()
+        let calc_pc_amount = Calculator::restore_decimal(
+            target.calc_pnl_x.into(),
+            amm.pc_decimals,
+            amm.sys_decimal_value,
+        );
+        let calc_coin_amount = Calculator::restore_decimal(
+            target.calc_pnl_y.into(),
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+        let pool_pc_amount = U128::from(*total_pc_without_take_pnl);
+        let pool_coin_amount = U128::from(*total_coin_without_take_pnl);
+        if pool_pc_amount.checked_mul(pool_coin_amount).unwrap()
+            >= (calc_pc_amount).checked_mul(calc_coin_amount).unwrap()
         {
             // last k is
             // let last_k: u128 = (target.calc_pnl_x as u128).checked_mul(target.calc_pnl_y as u128).unwrap();
@@ -891,7 +901,9 @@ impl Processor {
             "sys_program",
             AmmError::InvalidSysProgramAddress
         );
-        if *amm_authority_info.key != Self::authority_id(program_id, AUTHORITY_AMM, init.nonce)? {
+        let (expect_amm_authority, expect_none) =
+            Pubkey::find_program_address(&[&AUTHORITY_AMM], program_id);
+        if *amm_authority_info.key != expect_amm_authority || init.nonce != expect_none {
             return Err(AmmError::InvalidProgramAddress.into());
         }
         if *create_fee_destination_info.key != config_feature::create_pool_fee_address::id() {
@@ -1274,6 +1286,12 @@ impl Processor {
         {
             return Err(AmmError::InvalidProgramAddress.into());
         }
+        let enable_orderbook;
+        if AmmStatus::from_u64(amm.status).orderbook_permission() {
+            enable_orderbook = true;
+        } else {
+            enable_orderbook = false;
+        }
         check_assert_eq!(
             *token_program_info.key,
             spl_token::id(),
@@ -1281,12 +1299,6 @@ impl Processor {
             AmmError::InvalidSplTokenProgram
         );
         let spl_token_program_id = token_program_info.key;
-        check_assert_eq!(
-            *market_info.key,
-            amm.market,
-            "market",
-            AmmError::InvalidMarket
-        );
         // token_coin must be amm.coin_vault or token_source_coin must not be amm.coin_vault
         if *amm_coin_vault_info.key != amm.coin_vault
             || *user_source_coin_info.key == amm.coin_vault
@@ -1318,25 +1330,37 @@ impl Processor {
             Self::unpack_token_account(&user_source_pc_info, spl_token_program_id)?;
         let mut target_orders =
             TargetOrders::load_mut_checked(&amm_target_orders_info, program_id, amm_info.key)?;
-        let (market_state, open_orders) = Self::load_serum_market_order(
-            market_info,
-            amm_open_orders_info,
-            amm_authority_info,
-            &amm,
-            false,
-        )?;
-        if identity(market_state.coin_mint) != amm_coin_vault.mint.to_aligned_bytes()
-            || identity(market_state.coin_mint) != user_source_coin.mint.to_aligned_bytes()
-        {
-            return Err(AmmError::InvalidCoinMint.into());
-        }
-        if identity(market_state.pc_mint) != amm_pc_vault.mint.to_aligned_bytes()
-            || identity(market_state.pc_mint) != user_source_pc.mint.to_aligned_bytes()
-        {
-            return Err(AmmError::InvalidPCMint.into());
-        }
         // calc the remaining total_pc & total_coin
-        let (mut total_pc_without_take_pnl, mut total_coin_without_take_pnl) =
+        let (mut total_pc_without_take_pnl, mut total_coin_without_take_pnl) = if enable_orderbook {
+            check_assert_eq!(
+                *market_info.key,
+                amm.market,
+                "market",
+                AmmError::InvalidMarket
+            );
+            check_assert_eq!(
+                *amm_open_orders_info.key,
+                amm.open_orders,
+                "open_orders",
+                AmmError::InvalidOpenOrders
+            );
+            let (market_state, open_orders) = Self::load_serum_market_order(
+                market_info,
+                amm_open_orders_info,
+                amm_authority_info,
+                &amm,
+                false,
+            )?;
+            if identity(market_state.coin_mint) != amm_coin_vault.mint.to_aligned_bytes()
+                || identity(market_state.coin_mint) != user_source_coin.mint.to_aligned_bytes()
+            {
+                return Err(AmmError::InvalidCoinMint.into());
+            }
+            if identity(market_state.pc_mint) != amm_pc_vault.mint.to_aligned_bytes()
+                || identity(market_state.pc_mint) != user_source_pc.mint.to_aligned_bytes()
+            {
+                return Err(AmmError::InvalidPCMint.into());
+            }
             Calculator::calc_total_without_take_pnl(
                 amm_pc_vault.amount,
                 amm_coin_vault.amount,
@@ -1345,7 +1369,15 @@ impl Processor {
                 &market_state,
                 &market_event_queue_info,
                 &amm_open_orders_info,
-            )?;
+            )?
+        } else {
+            Calculator::calc_total_without_take_pnl_no_orderbook(
+                amm_pc_vault.amount,
+                amm_coin_vault.amount,
+                &amm,
+            )?
+        };
+
         let x1 = Calculator::normalize_decimal_v2(
             total_pc_without_take_pnl,
             amm.pc_decimals,
@@ -1828,7 +1860,7 @@ impl Processor {
         let amm_lp_mint_info = next_account_info(account_info_iter)?;
         let amm_coin_vault_info = next_account_info(account_info_iter)?;
         let amm_pc_vault_info = next_account_info(account_info_iter)?;
-        if input_account_len != ACCOUNT_LEN + 2 || input_account_len != ACCOUNT_LEN + 3 {
+        if input_account_len == ACCOUNT_LEN + 2 || input_account_len == ACCOUNT_LEN + 3 {
             let _padding_account_info1 = next_account_info(account_info_iter)?;
             let _padding_account_info2 = next_account_info(account_info_iter)?;
         }
@@ -1883,6 +1915,12 @@ impl Processor {
         {
             return Err(AmmError::InvalidProgramAddress.into());
         }
+        let enable_orderbook;
+        if AmmStatus::from_u64(amm.status).orderbook_permission() {
+            enable_orderbook = true;
+        } else {
+            enable_orderbook = false;
+        }
         check_assert_eq!(
             *token_program_info.key,
             spl_token::id(),
@@ -1890,12 +1928,6 @@ impl Processor {
             AmmError::InvalidSplTokenProgram
         );
         let spl_token_program_id = token_program_info.key;
-        check_assert_eq!(
-            *market_info.key,
-            amm.market,
-            "market",
-            AmmError::InvalidMarket
-        );
         // token_coin must be amm.coin_vault or token_dest_coin must not be amm.coin_vault
         if *amm_coin_vault_info.key != amm.coin_vault || *user_dest_coin_info.key == amm.coin_vault
         {
@@ -1905,12 +1937,6 @@ impl Processor {
         if *amm_pc_vault_info.key != amm.pc_vault || *user_dest_pc_info.key == amm.pc_vault {
             return Err(AmmError::InvalidPCVault.into());
         }
-        check_assert_eq!(
-            *market_program_info.key,
-            amm.market_program,
-            "market_program",
-            AmmError::InvalidMarketProgram
-        );
         check_assert_eq!(
             *amm_target_orders_info.key,
             amm.target_orders,
@@ -1930,64 +1956,6 @@ impl Processor {
         let user_dest_coin =
             Self::unpack_token_account(&user_dest_coin_info, spl_token_program_id)?;
         let user_dest_pc = Self::unpack_token_account(&user_dest_pc_info, spl_token_program_id)?;
-        let (market_state, open_orders) = Self::load_serum_market_order(
-            market_info,
-            amm_open_orders_info,
-            amm_authority_info,
-            &amm,
-            false,
-        )?;
-        let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-        let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
-        let (bids, asks) = Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
-        // let amm_orders = Self::get_amm_order(&market_state, &open_orders, serum_bids_info, serum_asks_info)?;
-        // cancel all orders
-        let mut amm_order_ids_vec = Vec::new();
-        let mut order_ids = [0u64; 8];
-        let mut count = 0;
-        for i in 0..std::cmp::max(bids.len(), asks.len()) {
-            if i < bids.len() {
-                order_ids[count] = bids[i].client_order_id();
-                count += 1;
-            }
-            if i < asks.len() {
-                order_ids[count] = asks[i].client_order_id();
-                count += 1;
-            }
-            if count == 8 {
-                amm_order_ids_vec.push(order_ids);
-                order_ids = [0u64; 8];
-                count = 0;
-            }
-        }
-        if count != 0 {
-            amm_order_ids_vec.push(order_ids);
-        }
-        for ids in amm_order_ids_vec.iter() {
-            Invokers::invoke_dex_cancel_orders_by_client_order_ids(
-                market_program_info.clone(),
-                market_info.clone(),
-                market_bids_info.clone(),
-                market_asks_info.clone(),
-                amm_open_orders_info.clone(),
-                amm_authority_info.clone(),
-                market_event_q_info.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-                *ids,
-            )?;
-        }
-
-        if identity(market_state.coin_mint) != amm_coin_vault.mint.to_aligned_bytes()
-            || identity(market_state.coin_mint) != user_dest_coin.mint.to_aligned_bytes()
-        {
-            return Err(AmmError::InvalidCoinMint.into());
-        }
-        if identity(market_state.pc_mint) != amm_pc_vault.mint.to_aligned_bytes()
-            || identity(market_state.pc_mint) != user_dest_pc.mint.to_aligned_bytes()
-        {
-            return Err(AmmError::InvalidPCMint.into());
-        }
 
         let lp_mint = Self::unpack_mint(&amm_lp_mint_info, spl_token_program_id)?;
         let user_source_lp =
@@ -2001,7 +1969,99 @@ impl Processor {
         if withdraw.amount > lp_mint.supply || withdraw.amount >= amm.lp_amount {
             return Err(AmmError::NotAllowZeroLP.into());
         }
-        let (mut total_pc_without_take_pnl, mut total_coin_without_take_pnl) =
+        let (mut total_pc_without_take_pnl, mut total_coin_without_take_pnl) = if enable_orderbook {
+            // check account
+            check_assert_eq!(
+                *market_info.key,
+                amm.market,
+                "market",
+                AmmError::InvalidMarket
+            );
+            check_assert_eq!(
+                *market_program_info.key,
+                amm.market_program,
+                "market_program",
+                AmmError::InvalidMarketProgram
+            );
+            check_assert_eq!(
+                *amm_open_orders_info.key,
+                amm.open_orders,
+                "open_orders",
+                AmmError::InvalidOpenOrders
+            );
+            // load
+            let (market_state, open_orders) = Self::load_serum_market_order(
+                market_info,
+                amm_open_orders_info,
+                amm_authority_info,
+                &amm,
+                false,
+            )?;
+            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let (bids, asks) = Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
+            // cancel all orders
+            let mut amm_order_ids_vec = Vec::new();
+            let mut order_ids = [0u64; 8];
+            let mut count = 0;
+            for i in 0..std::cmp::max(bids.len(), asks.len()) {
+                if i < bids.len() {
+                    order_ids[count] = bids[i].client_order_id();
+                    count += 1;
+                }
+                if i < asks.len() {
+                    order_ids[count] = asks[i].client_order_id();
+                    count += 1;
+                }
+                if count == 8 {
+                    amm_order_ids_vec.push(order_ids);
+                    order_ids = [0u64; 8];
+                    count = 0;
+                }
+            }
+            if count != 0 {
+                amm_order_ids_vec.push(order_ids);
+            }
+            for ids in amm_order_ids_vec.iter() {
+                Invokers::invoke_dex_cancel_orders_by_client_order_ids(
+                    market_program_info.clone(),
+                    market_info.clone(),
+                    market_bids_info.clone(),
+                    market_asks_info.clone(),
+                    amm_open_orders_info.clone(),
+                    amm_authority_info.clone(),
+                    market_event_q_info.clone(),
+                    AUTHORITY_AMM,
+                    amm.nonce as u8,
+                    *ids,
+                )?;
+            }
+            Invokers::invoke_dex_settle_funds(
+                market_program_info.clone(),
+                market_info.clone(),
+                amm_open_orders_info.clone(),
+                amm_authority_info.clone(),
+                market_coin_vault_info.clone(),
+                market_pc_vault_info.clone(),
+                amm_coin_vault_info.clone(),
+                amm_pc_vault_info.clone(),
+                market_vault_signer.clone(),
+                token_program_info.clone(),
+                referrer_pc_wallet.clone(),
+                AUTHORITY_AMM,
+                amm.nonce as u8,
+            )?;
+
+            if identity(market_state.coin_mint) != amm_coin_vault.mint.to_aligned_bytes()
+                || identity(market_state.coin_mint) != user_dest_coin.mint.to_aligned_bytes()
+            {
+                return Err(AmmError::InvalidCoinMint.into());
+            }
+            if identity(market_state.pc_mint) != amm_pc_vault.mint.to_aligned_bytes()
+                || identity(market_state.pc_mint) != user_dest_pc.mint.to_aligned_bytes()
+            {
+                return Err(AmmError::InvalidPCMint.into());
+            }
             Calculator::calc_total_without_take_pnl(
                 amm_pc_vault.amount,
                 amm_coin_vault.amount,
@@ -2010,7 +2070,15 @@ impl Processor {
                 &market_state,
                 &market_event_q_info,
                 &amm_open_orders_info,
-            )?;
+            )?
+        } else {
+            Calculator::calc_total_without_take_pnl_no_orderbook(
+                amm_pc_vault.amount,
+                amm_coin_vault.amount,
+                &amm,
+            )?
+        };
+
         let x1 = Calculator::normalize_decimal_v2(
             total_pc_without_take_pnl,
             amm.pc_decimals,
@@ -2064,113 +2132,7 @@ impl Processor {
             return Err(AmmError::InvalidInput.into());
         }
 
-        if coin_amount <= amm_coin_vault.amount && pc_amount <= amm_pc_vault.amount {
-            Invokers::token_transfer_with_authority(
-                token_program_info.clone(),
-                amm_coin_vault_info.clone(),
-                user_dest_coin_info.clone(),
-                amm_authority_info.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-                coin_amount,
-            )?;
-            Invokers::token_transfer_with_authority(
-                token_program_info.clone(),
-                amm_pc_vault_info.clone(),
-                user_dest_pc_info.clone(),
-                amm_authority_info.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-                pc_amount,
-            )?;
-            Invokers::token_burn(
-                token_program_info.clone(),
-                user_source_lp_info.clone(),
-                amm_lp_mint_info.clone(),
-                source_lp_owner_info.clone(),
-                withdraw.amount,
-            )?;
-            amm.lp_amount = amm.lp_amount.checked_sub(withdraw.amount).unwrap();
-        } else if coin_amount
-            <= amm_coin_vault
-                .amount
-                .checked_add(open_orders.native_coin_free)
-                .unwrap()
-            && pc_amount
-                <= amm_pc_vault
-                    .amount
-                    .checked_add(open_orders.native_pc_free)
-                    .unwrap()
-        {
-            Invokers::invoke_dex_settle_funds(
-                market_program_info.clone(),
-                market_info.clone(),
-                amm_open_orders_info.clone(),
-                amm_authority_info.clone(),
-                market_coin_vault_info.clone(),
-                market_pc_vault_info.clone(),
-                amm_coin_vault_info.clone(),
-                amm_pc_vault_info.clone(),
-                market_vault_signer.clone(),
-                token_program_info.clone(),
-                referrer_pc_wallet.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-            )?;
-
-            Invokers::token_transfer_with_authority(
-                token_program_info.clone(),
-                amm_coin_vault_info.clone(),
-                user_dest_coin_info.clone(),
-                amm_authority_info.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-                coin_amount,
-            )?;
-            Invokers::token_transfer_with_authority(
-                token_program_info.clone(),
-                amm_pc_vault_info.clone(),
-                user_dest_pc_info.clone(),
-                amm_authority_info.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-                pc_amount,
-            )?;
-            Invokers::token_burn(
-                token_program_info.clone(),
-                user_source_lp_info.clone(),
-                amm_lp_mint_info.clone(),
-                source_lp_owner_info.clone(),
-                withdraw.amount,
-            )?;
-            amm.lp_amount = amm.lp_amount.checked_sub(withdraw.amount).unwrap();
-        } else if coin_amount
-            <= amm_coin_vault
-                .amount
-                .checked_add(open_orders.native_coin_total)
-                .unwrap()
-            && pc_amount
-                <= amm_pc_vault
-                    .amount
-                    .checked_add(open_orders.native_pc_total)
-                    .unwrap()
-        {
-            Invokers::invoke_dex_settle_funds(
-                market_program_info.clone(),
-                market_info.clone(),
-                amm_open_orders_info.clone(),
-                amm_authority_info.clone(),
-                market_coin_vault_info.clone(),
-                market_pc_vault_info.clone(),
-                amm_coin_vault_info.clone(),
-                amm_pc_vault_info.clone(),
-                market_vault_signer.clone(),
-                token_program_info.clone(),
-                referrer_pc_wallet.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-            )?;
-
+        if coin_amount < amm_coin_vault.amount && pc_amount < amm_pc_vault.amount {
             Invokers::token_transfer_with_authority(
                 token_program_info.clone(),
                 amm_coin_vault_info.clone(),
@@ -2295,18 +2257,6 @@ impl Processor {
             "pc_vault",
             AmmError::InvalidPCVault
         );
-        check_assert_eq!(
-            *amm_open_orders_info.key,
-            amm.open_orders,
-            "open_orders",
-            AmmError::InvalidOpenOrders
-        );
-        check_assert_eq!(
-            *market_program_info.key,
-            amm.market_program,
-            "market_program",
-            AmmError::InvalidMarketProgram
-        );
 
         if *user_source_info.key == amm.pc_vault || *user_source_info.key == amm.coin_vault {
             return Err(AmmError::InvalidUserToken.into());
@@ -2352,6 +2302,18 @@ impl Processor {
         let mut asks: Vec<LeafNode> = Vec::new();
         if enable_orderbook {
             check_assert_eq!(
+                *amm_open_orders_info.key,
+                amm.open_orders,
+                "open_orders",
+                AmmError::InvalidOpenOrders
+            );
+            check_assert_eq!(
+                *market_porgram_info.key,
+                amm.market_program,
+                "market_program",
+                AmmError::InvalidMarketProgram
+            );
+            check_assert_eq!(
                 *market_info.key,
                 amm.market,
                 "market",
@@ -2378,12 +2340,10 @@ impl Processor {
                     &amm_open_orders_info,
                 )?;
         } else {
-            let open_orders = Self::load_orders(amm_open_orders_info)?;
             (total_pc_without_take_pnl, total_coin_without_take_pnl) =
                 Calculator::calc_total_without_take_pnl_no_orderbook(
                     amm_pc_vault.amount,
                     amm_coin_vault.amount,
-                    &open_orders,
                     &amm,
                 )?;
         }
@@ -2710,18 +2670,6 @@ impl Processor {
             "pc_vault",
             AmmError::InvalidPCVault
         );
-        check_assert_eq!(
-            *amm_open_orders_info.key,
-            amm.open_orders,
-            "open_orders",
-            AmmError::InvalidOpenOrders
-        );
-        check_assert_eq!(
-            *market_program_info.key,
-            amm.market_program,
-            "market_program",
-            AmmError::InvalidMarketProgram
-        );
 
         if *user_source_info.key == amm.pc_vault || *user_source_info.key == amm.coin_vault {
             return Err(AmmError::InvalidUserToken.into());
@@ -2767,6 +2715,18 @@ impl Processor {
         let mut asks: Vec<LeafNode> = Vec::new();
         if enable_orderbook {
             check_assert_eq!(
+                *amm_open_orders_info.key,
+                amm.open_orders,
+                "open_orders",
+                AmmError::InvalidOpenOrders
+            );
+            check_assert_eq!(
+                *market_program_info.key,
+                amm.market_program,
+                "market_program",
+                AmmError::InvalidMarketProgram
+            );
+            check_assert_eq!(
                 *market_info.key,
                 amm.market,
                 "market",
@@ -2793,12 +2753,10 @@ impl Processor {
                     &amm_open_orders_info,
                 )?;
         } else {
-            let open_orders = Self::load_orders(amm_open_orders_info)?;
             (total_pc_without_take_pnl, total_coin_without_take_pnl) =
                 Calculator::calc_total_without_take_pnl_no_orderbook(
                     amm_pc_vault.amount,
                     amm_coin_vault.amount,
-                    &open_orders,
                     &amm,
                 )?;
         }
@@ -5539,6 +5497,7 @@ impl Processor {
                 | AmmStatus::SwapOnly
                 | AmmStatus::WaitingTrade => {
                     msg!("monitor_step: AmmStatus:{}", amm.status);
+                    return Err(AmmError::InvalidStatus.into());
                 }
                 AmmStatus::Initialized | AmmStatus::OrderBookOnly => match amm_state {
                     AmmState::IdleState => {
@@ -6545,7 +6504,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_calc_tack_pnl() {
+    fn test_calc_take_pnl() {
         let mut amm = AmmInfo::default();
         amm.initialize(0, 0, 2, 9, 1000000, 1).unwrap();
         let mut target = TargetOrders::default();
@@ -6554,6 +6513,131 @@ mod test {
 
         let mut total_pc_without_take_pnl = 1343675125663;
         let mut total_coin_without_take_pnl = 117837534493793;
+        let x1 = Calculator::normalize_decimal_v2(
+            total_pc_without_take_pnl,
+            amm.pc_decimals,
+            amm.sys_decimal_value,
+        );
+        let y1 = Calculator::normalize_decimal_v2(
+            total_coin_without_take_pnl,
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+
+        let (delta_x, delta_y) = Processor::calc_take_pnl(
+            &target,
+            &mut amm,
+            &mut total_pc_without_take_pnl,
+            &mut total_coin_without_take_pnl,
+            x1.as_u128().into(),
+            y1.as_u128().into(),
+        )
+        .unwrap();
+        println!("delta_x:{}, delta_y:{}", delta_x, delta_y);
+    }
+
+    #[test]
+    fn test_calc_pnl_precision() {
+        // init
+        let mut amm = AmmInfo::default();
+        let init_pc_amount = 5434000000u64;
+        let init_coin_amount = 100000000000000u64;
+        let liquidity = Calculator::to_u64(
+            U128::from(init_pc_amount)
+                .checked_mul(init_coin_amount.into())
+                .unwrap()
+                .integer_sqrt()
+                .as_u128(),
+        )
+        .unwrap();
+        amm.initialize(0, 0, 5, 9, 1000000000, 7803).unwrap();
+        amm.lp_amount = liquidity;
+
+        let x =
+            Calculator::normalize_decimal_v2(5434000000, amm.pc_decimals, amm.sys_decimal_value);
+        let y = Calculator::normalize_decimal_v2(
+            100000000000000,
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+        let mut target = TargetOrders::default();
+        target.calc_pnl_x = x.as_u128();
+        target.calc_pnl_y = y.as_u128();
+        println!(
+             "init_pc_amount:{}, init_coin_amount:{}, liquidity:{}, sys_decimal_value:{}, calc_pnl_x:{}, calc_pnl_y:{}",
+             init_pc_amount, init_coin_amount, liquidity, amm.sys_decimal_value, target.calc_pnl_x, target.calc_pnl_y
+         );
+
+        // withdraw
+        let withdraw_lp = 2577470628u64;
+        let mut total_pc_without_take_pnl = init_pc_amount;
+        let mut total_coin_without_take_pnl = init_coin_amount;
+        let x1 = Calculator::normalize_decimal_v2(
+            total_pc_without_take_pnl,
+            amm.pc_decimals,
+            amm.sys_decimal_value,
+        );
+        let y1 = Calculator::normalize_decimal_v2(
+            total_coin_without_take_pnl,
+            amm.coin_decimals,
+            amm.sys_decimal_value,
+        );
+
+        let (delta_x, delta_y) = Processor::calc_take_pnl(
+            &target,
+            &mut amm,
+            &mut total_pc_without_take_pnl,
+            &mut total_coin_without_take_pnl,
+            x1.as_u128().into(),
+            y1.as_u128().into(),
+        )
+        .unwrap();
+        println!("delta_x:{}, delta_y:{}", delta_x, delta_y);
+        // coin_amount / total_coin_amount = amount / lp_mint.supply => coin_amount = total_coin_amount * amount / pool_mint.supply
+        let invariant = InvariantPool {
+            token_input: withdraw_lp,
+            token_total: amm.lp_amount,
+        };
+        let coin_amount = invariant
+            .exchange_pool_to_token(total_coin_without_take_pnl, RoundDirection::Floor)
+            .ok_or(AmmError::CalculationExRateFailure)
+            .unwrap();
+        let pc_amount = invariant
+            .exchange_pool_to_token(total_pc_without_take_pnl, RoundDirection::Floor)
+            .ok_or(AmmError::CalculationExRateFailure)
+            .unwrap();
+
+        amm.lp_amount = amm.lp_amount.checked_sub(withdraw_lp).unwrap();
+        target.calc_pnl_x = x1
+            .checked_sub(Calculator::normalize_decimal_v2(
+                pc_amount,
+                amm.pc_decimals,
+                amm.sys_decimal_value,
+            ))
+            .unwrap()
+            .checked_sub(U128::from(delta_x))
+            .unwrap()
+            .as_u128();
+        target.calc_pnl_y = y1
+            .checked_sub(Calculator::normalize_decimal_v2(
+                coin_amount,
+                amm.coin_decimals,
+                amm.sys_decimal_value,
+            ))
+            .unwrap()
+            .checked_sub(U128::from(delta_y))
+            .unwrap()
+            .as_u128();
+        total_pc_without_take_pnl = total_pc_without_take_pnl.checked_sub(pc_amount).unwrap();
+        total_coin_without_take_pnl = total_coin_without_take_pnl
+            .checked_sub(coin_amount)
+            .unwrap();
+        println!(
+             "withdraw calc_pnl_x:{}, calc_pnl_y:{}, total_pc_without_take_pnl:{}, total_coin_without_take_pnl:{}",
+             target.calc_pnl_x, target.calc_pnl_y, total_pc_without_take_pnl, total_coin_without_take_pnl
+         );
+
+        // withdraw 2
         let x1 = Calculator::normalize_decimal_v2(
             total_pc_without_take_pnl,
             amm.pc_decimals,
