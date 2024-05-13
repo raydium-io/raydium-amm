@@ -901,9 +901,9 @@ impl Processor {
             "sys_program",
             AmmError::InvalidSysProgramAddress
         );
-        let (expect_amm_authority, expect_none) =
+        let (expect_amm_authority, expect_nonce) =
             Pubkey::find_program_address(&[&AUTHORITY_AMM], program_id);
-        if *amm_authority_info.key != expect_amm_authority || init.nonce != expect_none {
+        if *amm_authority_info.key != expect_amm_authority || init.nonce != expect_nonce {
             return Err(AmmError::InvalidProgramAddress.into());
         }
         if *create_fee_destination_info.key != config_feature::create_pool_fee_address::id() {
@@ -2308,7 +2308,7 @@ impl Processor {
                 AmmError::InvalidOpenOrders
             );
             check_assert_eq!(
-                *market_porgram_info.key,
+                *market_program_info.key,
                 amm.market_program,
                 "market_program",
                 AmmError::InvalidMarketProgram
