@@ -2210,7 +2210,7 @@ impl Processor {
         let amm_coin_vault_info = next_account_info(account_info_iter)?;
         let amm_pc_vault_info = next_account_info(account_info_iter)?;
 
-        let market_porgram_info = next_account_info(account_info_iter)?;
+        let market_program_info = next_account_info(account_info_iter)?;
 
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
         let enable_orderbook;
@@ -2429,7 +2429,7 @@ impl Processor {
                         }
                         for ids in amm_order_ids_vec.iter() {
                             Invokers::invoke_dex_cancel_orders_by_client_order_ids(
-                                market_porgram_info.clone(),
+                                market_program_info.clone(),
                                 market_info.clone(),
                                 market_bids_info.clone(),
                                 market_asks_info.clone(),
@@ -2446,7 +2446,7 @@ impl Processor {
                     if swap_amount_out > amm_pc_vault.amount {
                         // need settle funds
                         Invokers::invoke_dex_settle_funds(
-                            market_porgram_info.clone(),
+                            market_program_info.clone(),
                             market_info.clone(),
                             amm_open_orders_info.clone(),
                             amm_authority_info.clone(),
@@ -2524,7 +2524,7 @@ impl Processor {
                         }
                         for ids in amm_order_ids_vec.iter() {
                             Invokers::invoke_dex_cancel_orders_by_client_order_ids(
-                                market_porgram_info.clone(),
+                                market_program_info.clone(),
                                 market_info.clone(),
                                 market_bids_info.clone(),
                                 market_asks_info.clone(),
@@ -2540,7 +2540,7 @@ impl Processor {
 
                     if swap_amount_out > amm_coin_vault.amount {
                         Invokers::invoke_dex_settle_funds(
-                            market_porgram_info.clone(),
+                            market_program_info.clone(),
                             market_info.clone(),
                             amm_open_orders_info.clone(),
                             amm_authority_info.clone(),
