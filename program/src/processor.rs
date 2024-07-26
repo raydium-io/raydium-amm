@@ -1554,6 +1554,7 @@ impl Processor {
             .checked_sub(U128::from(delta_y))
             .unwrap()
             .as_u128();
+        amm.recent_epoch = Clock::get()?.epoch;
         Ok(())
     }
 
@@ -1831,6 +1832,7 @@ impl Processor {
             amm.state = AmmState::CancelAllOrdersState.into_u64();
             amm.status = AmmStatus::Disabled.into_u64();
         }
+        amm.recent_epoch = Clock::get()?.epoch;
 
         Ok(())
     }
@@ -2185,6 +2187,7 @@ impl Processor {
             .checked_sub(U128::from(delta_y))
             .unwrap()
             .as_u128();
+        amm.recent_epoch = Clock::get()?.epoch;
         Ok(())
     }
 
@@ -2593,6 +2596,7 @@ impl Processor {
                     .unwrap();
             }
         };
+        amm.recent_epoch = Clock::get()?.epoch;
 
         Ok(())
     }
@@ -3006,6 +3010,7 @@ impl Processor {
                     .unwrap();
             }
         };
+        amm.recent_epoch = Clock::get()?.epoch;
 
         Ok(())
     }
@@ -3265,6 +3270,7 @@ impl Processor {
             )
             .as_u128();
         }
+        amm.recent_epoch = Clock::get()?.epoch;
 
         Ok(())
     }
@@ -5387,6 +5393,7 @@ impl Processor {
         } else {
             return Err(AmmError::InvalidParamsSet.into());
         }
+        amm.recent_epoch = Clock::get()?.epoch;
         Ok(())
     }
 

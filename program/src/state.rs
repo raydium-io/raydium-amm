@@ -4,9 +4,11 @@ use crate::{error::AmmError, math::Calculator};
 use serum_dex::state::ToAlignedBytes;
 use solana_program::{
     account_info::AccountInfo,
+    clock::Clock,
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack, Sealed},
     pubkey::Pubkey,
+    sysvar::Sysvar,
 };
 
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
@@ -687,8 +689,10 @@ pub struct AmmInfo {
     pub lp_amount: u64,
     /// client order id
     pub client_order_id: u64,
+    /// recent epoch
+    pub recent_epoch: u64,
     /// padding
-    pub padding2: [u64; 2],
+    pub padding2: u64,
 }
 impl_loadable!(AmmInfo);
 
@@ -821,6 +825,7 @@ impl AmmInfo {
         self.max_price_multiplier = 1000000000;
         self.client_order_id = 0;
         self.padding1 = Zeroable::zeroed();
+        self.recent_epoch = Clock::get().unwrap().epoch;
         self.padding2 = Zeroable::zeroed();
 
         Ok(())
