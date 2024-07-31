@@ -137,7 +137,6 @@ pub enum AmmInstruction {
     ///   Not supported yet, please use `Initialize2` to new a AMM pool
     #[deprecated(note = "Not supported yet, please use `Initialize2` instead")]
     Initialize(InitializeInstruction),
-
     ///   Initializes a new AMM pool.
     ///
     ///   0. `[]` Spl Token program id
@@ -809,6 +808,113 @@ impl AmmInstruction {
     }
 }
 
+#[deprecated(note = "Not supported yet, please use `Initialize2` instead")]
+/// Creates an 'preinitialize' instruction.
+pub fn pre_initialize(
+    program_id: &Pubkey,
+    amm_target_orders: &Pubkey,
+    pool_withdraw_queue: &Pubkey,
+    amm_authority: &Pubkey,
+    lp_mint_address: &Pubkey,
+    coin_mint_address: &Pubkey,
+    pc_mint_address: &Pubkey,
+    pool_coin_token_account: &Pubkey,
+    pool_pc_token_account: &Pubkey,
+    pool_temp_lp_token_account: &Pubkey,
+    serum_market: &Pubkey,
+    user_wallet: &Pubkey,
+
+    nonce: u8,
+) -> Result<Instruction, ProgramError> {
+    let init_data = AmmInstruction::PreInitialize(PreInitializeInstruction { nonce });
+    let data = init_data.pack()?;
+
+    let accounts = vec![
+        // spl token
+        AccountMeta::new_readonly(spl_token::id(), false),
+        AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
+        // amm account
+        AccountMeta::new(*amm_target_orders, false),
+        AccountMeta::new(*pool_withdraw_queue, false),
+        AccountMeta::new_readonly(*amm_authority, false),
+        AccountMeta::new(*lp_mint_address, false),
+        AccountMeta::new_readonly(*coin_mint_address, false),
+        AccountMeta::new_readonly(*pc_mint_address, false),
+        AccountMeta::new(*pool_coin_token_account, false),
+        AccountMeta::new(*pool_pc_token_account, false),
+        AccountMeta::new(*pool_temp_lp_token_account, false),
+        // serum
+        AccountMeta::new_readonly(*serum_market, false),
+        // user wallet
+        AccountMeta::new(*user_wallet, true),
+    ];
+
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    })
+}
+
+#[deprecated(note = "Not supported yet, please use `Initialize2` instead")]
+/// Creates an 'initialize' instruction.
+pub fn initialize(
+    program_id: &Pubkey,
+    amm_id: &Pubkey,
+    amm_authority: &Pubkey,
+    amm_open_orders: &Pubkey,
+    lp_mint_address: &Pubkey,
+    coin_mint_address: &Pubkey,
+    pc_mint_address: &Pubkey,
+    pool_coin_token_account: &Pubkey,
+    pool_pc_token_account: &Pubkey,
+    pool_withdraw_queue: &Pubkey,
+    pool_target_orders_account: &Pubkey,
+    user_lp_token_account: &Pubkey,
+    pool_temp_lp_token_account: &Pubkey,
+    serum_program_id: &Pubkey,
+    serum_market: &Pubkey,
+    user_wallet: &Pubkey,
+
+    nonce: u8,
+    open_time: u64,
+) -> Result<Instruction, ProgramError> {
+    let init_data = AmmInstruction::Initialize(InitializeInstruction { nonce, open_time });
+    let data = init_data.pack()?;
+
+    let accounts = vec![
+        // spl token
+        AccountMeta::new_readonly(spl_token::id(), false),
+        AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
+        // amm
+        AccountMeta::new(*amm_id, false),
+        AccountMeta::new_readonly(*amm_authority, false),
+        AccountMeta::new(*amm_open_orders, false),
+        AccountMeta::new(*lp_mint_address, false),
+        AccountMeta::new_readonly(*coin_mint_address, false),
+        AccountMeta::new_readonly(*pc_mint_address, false),
+        AccountMeta::new_readonly(*pool_coin_token_account, false),
+        AccountMeta::new_readonly(*pool_pc_token_account, false),
+        AccountMeta::new(*pool_withdraw_queue, false),
+        AccountMeta::new(*pool_target_orders_account, false),
+        AccountMeta::new(*user_lp_token_account, false),
+        AccountMeta::new_readonly(*pool_temp_lp_token_account, false),
+        // serum
+        AccountMeta::new_readonly(*serum_program_id, false),
+        AccountMeta::new_readonly(*serum_market, false),
+        // user wallet
+        AccountMeta::new(*user_wallet, true),
+    ];
+
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    })
+}
+
 /// Creates an 'initialize2' instruction.
 pub fn initialize2(
     amm_program: &Pubkey,
@@ -1121,8 +1227,8 @@ pub fn swap_base_out(
     })
 }
 
-/// Creates a 'migrate_to_openbook' instruction.
-pub fn migrate_to_openbook(
+/// Creates a 'migrate_to_open_book' instruction.
+pub fn migrate_to_open_book(
     amm_program: &Pubkey,
     amm_pool: &Pubkey,
     amm_authority: &Pubkey,
@@ -1183,8 +1289,8 @@ pub fn migrate_to_openbook(
     })
 }
 
-/// Creates a 'withdrawpnl' instruction
-pub fn withdrawpnl(
+/// Creates a 'withdraw_pnl' instruction
+pub fn withdraw_pnl(
     amm_program: &Pubkey,
     amm_pool: &Pubkey,
     amm_config: &Pubkey,
@@ -1374,8 +1480,8 @@ pub fn monitor_step(
     })
 }
 
-/// Creates a 'withdrawsrm' instruction
-pub fn withdrawsrm(
+/// Creates a 'withdraw_srm' instruction
+pub fn withdraw_srm(
     amm_program: &Pubkey,
     amm_pool: &Pubkey,
     amm_authority: &Pubkey,
@@ -1405,8 +1511,8 @@ pub fn withdrawsrm(
     })
 }
 
-/// Create a 'simulate_get_pool_info' instruction
-pub fn simulate_get_pool_info(
+/// Create a 'simulate_info' instruction
+pub fn simulate_info(
     amm_program: &Pubkey,
     amm_pool: &Pubkey,
     amm_authority: &Pubkey,

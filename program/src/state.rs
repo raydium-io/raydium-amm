@@ -101,7 +101,6 @@ pub struct TargetOrders {
 }
 impl_loadable!(TargetOrders);
 
-#[cfg(test)]
 impl Default for TargetOrders {
     #[inline]
     fn default() -> TargetOrders {
@@ -204,6 +203,25 @@ impl TargetOrders {
             return Err(AmmError::InvalidTargetOwner.into());
         }
         Ok(data)
+    }
+}
+
+/// IsInitialized is required to use `Pack::pack` and `Pack::unpack`,
+impl IsInitialized for TargetOrders {
+    fn is_initialized(&self) -> bool {
+        identity(self.owner) != Pubkey::default().to_aligned_bytes()
+    }
+}
+
+impl Sealed for TargetOrders {}
+
+// Implment Pack just for genarate idl
+impl Pack for TargetOrders {
+    const LEN: usize = 2208; //32 + 16 * 50 + 64 + 10 * 16 + 16 * 50 + 48 + 80 + 80 + 16 * 8 + 16;
+    fn pack_into_slice(&self, _: &mut [u8]) {}
+
+    fn unpack_from_slice(_: &[u8]) -> Result<TargetOrders, ProgramError> {
+        Ok(TargetOrders::default())
     }
 }
 
@@ -840,6 +858,25 @@ impl AmmInfo {
     }
 }
 
+/// IsInitialized is required to use `Pack::pack` and `Pack::unpack`,
+impl IsInitialized for AmmInfo {
+    fn is_initialized(&self) -> bool {
+        true
+    }
+}
+
+impl Sealed for AmmInfo {}
+
+// Implment Pack just for genarate idl
+impl Pack for AmmInfo {
+    const LEN: usize = 752; // 16 * 8 + 64 + 144 + 12 * 32 + 4 * 8
+    fn pack_into_slice(&self, _: &mut [u8]) {}
+
+    fn unpack_from_slice(_: &[u8]) -> Result<AmmInfo, ProgramError> {
+        Ok(AmmInfo::default())
+    }
+}
+
 /// State of amm config account
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -889,6 +926,25 @@ impl AmmConfig {
         }
         let data = Self::load(account)?;
         Ok(data)
+    }
+}
+
+/// IsInitialized is required to use `Pack::pack` and `Pack::unpack`,
+impl IsInitialized for AmmConfig {
+    fn is_initialized(&self) -> bool {
+        true
+    }
+}
+
+impl Sealed for AmmConfig {}
+
+// Implment Pack just for genarate idl
+impl Pack for AmmConfig {
+    const LEN: usize = 544; // 32 * 2 + 8 * 28 + 8 * 31 + 8
+    fn pack_into_slice(&self, _: &mut [u8]) {}
+
+    fn unpack_from_slice(_: &[u8]) -> Result<AmmConfig, ProgramError> {
+        Ok(AmmConfig::default())
     }
 }
 
