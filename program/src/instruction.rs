@@ -61,6 +61,7 @@ pub struct DepositInstruction {
     pub max_coin_amount: u64,
     pub max_pc_amount: u64,
     pub base_side: u64,
+    pub other_amount_min: Option<u64>,
 }
 
 #[repr(C)]
@@ -69,6 +70,8 @@ pub struct WithdrawInstruction {
     /// Pool token amount to transfer. token_a and token_b amount are set by
     /// the current exchange rate and size of the pool
     pub amount: u64,
+    pub min_coin_amount: Option<u64>,
+    pub min_pc_amount: Option<u64>,
 }
 
 #[repr(C)]
@@ -405,16 +408,34 @@ impl AmmInstruction {
             3 => {
                 let (max_coin_amount, rest) = Self::unpack_u64(rest)?;
                 let (max_pc_amount, rest) = Self::unpack_u64(rest)?;
-                let (base_side, _rest) = Self::unpack_u64(rest)?;
+                let (base_side, rest) = Self::unpack_u64(rest)?;
+                let other_amount_min = if rest.len() >= 8 {
+                    let (other_amount_min, _rest) = Self::unpack_u64(rest)?;
+                    Some(other_amount_min)
+                } else {
+                    None
+                };
                 Self::Deposit(DepositInstruction {
                     max_coin_amount,
                     max_pc_amount,
                     base_side,
+                    other_amount_min,
                 })
             }
             4 => {
-                let (amount, _rest) = Self::unpack_u64(rest)?;
-                Self::Withdraw(WithdrawInstruction { amount })
+                let (amount, rest) = Self::unpack_u64(rest)?;
+                let (min_coin_amount, min_pc_amount) = if rest.len() >= 16 {
+                    let (min_coin_amount, rest) = Self::unpack_u64(rest)?;
+                    let (min_pc_amount, _rest) = Self::unpack_u64(rest)?;
+                    (Some(min_coin_amount), Some(min_pc_amount))
+                } else {
+                    (None, None)
+                };
+                Self::Withdraw(WithdrawInstruction {
+                    amount,
+                    min_coin_amount,
+                    min_pc_amount,
+                })
             }
             5 => Self::MigrateToOpenBook,
             6 => {
@@ -656,15 +677,27 @@ impl AmmInstruction {
                 max_coin_amount,
                 max_pc_amount,
                 base_side,
+                other_amount_min,
             }) => {
                 buf.push(3);
                 buf.extend_from_slice(&max_coin_amount.to_le_bytes());
                 buf.extend_from_slice(&max_pc_amount.to_le_bytes());
                 buf.extend_from_slice(&base_side.to_le_bytes());
+                if other_amount_min.is_some() {
+                    buf.extend_from_slice(&other_amount_min.unwrap().to_le_bytes());
+                }
             }
-            Self::Withdraw(WithdrawInstruction { amount }) => {
+            Self::Withdraw(WithdrawInstruction {
+                amount,
+                min_coin_amount,
+                min_pc_amount,
+            }) => {
                 buf.push(4);
                 buf.extend_from_slice(&amount.to_le_bytes());
+                if min_coin_amount.is_some() && min_pc_amount.is_some() {
+                    buf.extend_from_slice(&min_coin_amount.unwrap().to_le_bytes());
+                    buf.extend_from_slice(&min_pc_amount.unwrap().to_le_bytes());
+                }
             }
             Self::MigrateToOpenBook => {
                 buf.push(5);
@@ -896,11 +929,13 @@ pub fn deposit(
     max_coin_amount: u64,
     max_pc_amount: u64,
     base_side: u64,
+    other_amount_min: Option<u64>,
 ) -> Result<Instruction, ProgramError> {
     let data = AmmInstruction::Deposit(DepositInstruction {
         max_coin_amount,
         max_pc_amount,
         base_side,
+        other_amount_min,
     })
     .pack()?;
 
@@ -958,8 +993,15 @@ pub fn withdraw(
     referrer_pc_account: Option<&Pubkey>,
 
     amount: u64,
+    min_coin_amount: Option<u64>,
+    min_pc_amount: Option<u64>,
 ) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::Withdraw(WithdrawInstruction { amount }).pack()?;
+    let data = AmmInstruction::Withdraw(WithdrawInstruction {
+        amount,
+        min_coin_amount,
+        min_pc_amount,
+    })
+    .pack()?;
 
     let mut accounts = vec![
         // spl token
