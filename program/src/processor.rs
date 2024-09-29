@@ -1446,6 +1446,26 @@ impl Processor {
                 });
                 return Err(AmmError::ExceededSlippage.into());
             }
+            // base coin, check other_amount_min if need
+            if deposit.other_amount_min.is_some() {
+                if deduct_pc_amount < deposit.other_amount_min.unwrap() {
+                    encode_ray_log(DepositLog {
+                        log_type: LogType::Deposit.into_u8(),
+                        max_coin: deposit.max_coin_amount,
+                        max_pc: deposit.max_pc_amount,
+                        base: deposit.base_side,
+                        pool_coin: total_coin_without_take_pnl,
+                        pool_pc: total_pc_without_take_pnl,
+                        pool_lp: amm.lp_amount,
+                        calc_pnl_x: target_orders.calc_pnl_x,
+                        calc_pnl_y: target_orders.calc_pnl_y,
+                        deduct_coin: deduct_coin_amount,
+                        deduct_pc: deduct_pc_amount,
+                        mint_lp: 0,
+                    });
+                    return Err(AmmError::ExceededSlippage.into());
+                }
+            }
             // coin_amount/ (total_coin_amount + coin_amount)  = output / (lp_mint.supply + output) =>  output = coin_amount / total_coin_amount * lp_mint.supply
             let invariant_coin = InvariantPool {
                 token_input: deduct_coin_amount,
@@ -1477,6 +1497,27 @@ impl Processor {
                 });
                 return Err(AmmError::ExceededSlippage.into());
             }
+            // base pc, check other_amount_min if need
+            if deposit.other_amount_min.is_some() {
+                if deduct_coin_amount < deposit.other_amount_min.unwrap() {
+                    encode_ray_log(DepositLog {
+                        log_type: LogType::Deposit.into_u8(),
+                        max_coin: deposit.max_coin_amount,
+                        max_pc: deposit.max_pc_amount,
+                        base: deposit.base_side,
+                        pool_coin: total_coin_without_take_pnl,
+                        pool_pc: total_pc_without_take_pnl,
+                        pool_lp: amm.lp_amount,
+                        calc_pnl_x: target_orders.calc_pnl_x,
+                        calc_pnl_y: target_orders.calc_pnl_y,
+                        deduct_coin: deduct_coin_amount,
+                        deduct_pc: deduct_pc_amount,
+                        mint_lp: 0,
+                    });
+                    return Err(AmmError::ExceededSlippage.into());
+                }
+            }
+
             let invariant_pc = InvariantPool {
                 token_input: deduct_pc_amount,
                 token_total: total_pc_without_take_pnl,
@@ -2135,6 +2176,13 @@ impl Processor {
         }
 
         if coin_amount < amm_coin_vault.amount && pc_amount < amm_pc_vault.amount {
+            if withdraw.min_coin_amount.is_some() && withdraw.min_pc_amount.is_some() {
+                if withdraw.min_coin_amount.unwrap() > coin_amount
+                    || withdraw.min_pc_amount.unwrap() > pc_amount
+                {
+                    return Err(AmmError::ExceededSlippage.into());
+                }
+            }
             Invokers::token_transfer_with_authority(
                 token_program_info.clone(),
                 amm_coin_vault_info.clone(),
