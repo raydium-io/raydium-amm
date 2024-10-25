@@ -1616,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "raydium_amm"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arrayref",
  "arrform",
