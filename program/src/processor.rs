@@ -57,19 +57,19 @@ pub mod msrm_token {
     solana_program::declare_id!("MSRMcoVyrFxnSgo5uXwone5SKcGhT1KEJMFEkMEWf9L");
 }
 
-#[cfg(feature = "localnet")]
+#[cfg(feature = "testnet")]
 pub mod config_feature {
     pub mod amm_owner {
         solana_program::declare_id!("75KWb5XcqPTgacQyNw9P5QU2HL3xpezEVcgsFCiJgTT");
     }
     pub mod openbook_program {
-        solana_program::declare_id!("kGeitTdTHT1WdpUScdm8yxUAirZwbnQtqrpzvAm1p98");
+        solana_program::declare_id!("6ccSma8mmmmQXcSFpheSKrTnwsCe5pBuEpzDLFjrAsCF");
     }
     pub mod referrer_pc_wallet {
         solana_program::declare_id!("75KWb5XcqPTgacQyNw9P5QU2HL3xpezEVcgsFCiJgTT");
     }
     pub mod create_pool_fee_address {
-        solana_program::declare_id!("75KWb5XcqPTgacQyNw9P5QU2HL3xpezEVcgsFCiJgTT");
+        solana_program::declare_id!("3TRTX4dXUpp2eqxi3tvQDFYUV7SdDJjcPE3Y4mbtftaX");
     }
 }
 #[cfg(feature = "devnet")]
@@ -87,7 +87,7 @@ pub mod config_feature {
         solana_program::declare_id!("3XMrhbv989VxAMi3DErLV9eJht1pHppW5LbKxe9fkEFR");
     }
 }
-#[cfg(not(any(feature = "localnet", feature = "devnet")))]
+#[cfg(not(any(feature = "testnet", feature = "devnet")))]
 pub mod config_feature {
     pub mod amm_owner {
         solana_program::declare_id!("GThUX1Atko4tqhN2NaiTazWSeFWMuiUvfFnyJyUghFMJ");
@@ -450,8 +450,8 @@ impl Processor {
                 "calc_take_pnl error x:{}, y:{}, calc_pnl_x:{}, calc_pnl_y:{}",
                 x1,
                 y1,
-                target.calc_pnl_x,
-                target.calc_pnl_y
+                identity(target.calc_pnl_x),
+                identity(target.calc_pnl_y)
             )
             .as_str());
             return Err(AmmError::CalcPnlError.into());
@@ -1662,7 +1662,7 @@ impl Processor {
         }
         // withdrawpnl in all status except Uninitialized
         if amm.status == AmmStatus::Uninitialized.into_u64() {
-            msg!(&format!("withdrawpnl: status {}", amm.status));
+            msg!(&format!("withdrawpnl: status {}", identity(amm.status)));
             return Err(AmmError::InvalidStatus.into());
         }
         check_assert_eq!(
@@ -1733,8 +1733,8 @@ impl Processor {
         msg!(arrform!(
             LOG_SIZE,
             "withdrawpnl need_take_coin:{}, need_take_pc:{}",
-            amm.state_data.need_take_pnl_coin,
-            amm.state_data.need_take_pnl_pc
+            identity(amm.state_data.need_take_pnl_coin),
+            identity(amm.state_data.need_take_pnl_pc)
         )
         .as_str());
 
@@ -1777,7 +1777,7 @@ impl Processor {
             x1.as_u128().into(),
             y1.as_u128().into(),
         )?;
-        msg!(arrform!(LOG_SIZE, "withdrawpnl total_pc:{}, total_pc:{}, delta_x:{}, delta_y:{}, need_take_coin:{}, need_take_pc:{}",total_pc_without_take_pnl, total_coin_without_take_pnl, delta_x, delta_y, amm.state_data.need_take_pnl_coin, amm.state_data.need_take_pnl_pc).as_str());
+        msg!(arrform!(LOG_SIZE, "withdrawpnl total_pc:{}, total_pc:{}, delta_x:{}, delta_y:{}, need_take_coin:{}, need_take_pc:{}",total_pc_without_take_pnl, total_coin_without_take_pnl, delta_x, delta_y, identity(amm.state_data.need_take_pnl_coin), identity(amm.state_data.need_take_pnl_pc)).as_str());
 
         if amm.state_data.need_take_pnl_coin <= amm_coin_vault.amount
             && amm.state_data.need_take_pnl_pc <= amm_pc_vault.amount
@@ -2327,7 +2327,7 @@ impl Processor {
             Self::unpack_token_account(&user_destination_info, spl_token_program_id)?;
 
         if !AmmStatus::from_u64(amm.status).swap_permission() {
-            msg!(&format!("swap_base_in: status {}", amm.status));
+            msg!(&format!("swap_base_in: status {}", identity(amm.status)));
             let clock = Clock::get()?;
             if amm.status == AmmStatus::OrderBookOnly.into_u64()
                 && (clock.unix_timestamp as u64) >= amm.state_data.orderbook_to_init_time
@@ -2741,7 +2741,7 @@ impl Processor {
             Self::unpack_token_account(&user_destination_info, spl_token_program_id)?;
 
         if !AmmStatus::from_u64(amm.status).swap_permission() {
-            msg!(&format!("swap_base_out: status {}", amm.status));
+            msg!(&format!("swap_base_out: status {}", identity(amm.status)));
             let clock = Clock::get()?;
             if amm.status == AmmStatus::OrderBookOnly.into_u64()
                 && (clock.unix_timestamp as u64) >= amm.state_data.orderbook_to_init_time
@@ -3341,7 +3341,7 @@ impl Processor {
         msg!("withdraw_srm: {}", withdrawsrm.amount);
         let amm = AmmInfo::load_checked(&amm_info, program_id)?;
         if amm.status == AmmStatus::Uninitialized.into_u64() {
-            msg!(&format!("withdraw_srm: status {}", amm.status));
+            msg!(&format!("withdraw_srm: status {}", identity(amm.status)));
             return Err(AmmError::InvalidStatus.into());
         }
         if !amm_owner_info.is_signer || *amm_owner_info.key != config_feature::amm_owner::ID {
@@ -3578,7 +3578,7 @@ impl Processor {
             let amm = AmmInfo::load_checked(&amm_info, program_id)?;
 
             if !AmmStatus::from_u64(amm.status).swap_permission() {
-                msg!("simulate_swap_base_in: status {}", amm.status);
+                msg!("simulate_swap_base_in: status {}", identity(amm.status));
                 return Err(AmmError::InvalidStatus.into());
             }
             let authority = Self::authority_id(program_id, AUTHORITY_AMM, amm.nonce as u8)?;
@@ -3800,7 +3800,7 @@ impl Processor {
             }
             let amm = AmmInfo::load_checked(&amm_info, program_id)?;
             if !AmmStatus::from_u64(amm.status).swap_permission() {
-                msg!("simulate_swap_base_out: status {}", amm.status);
+                msg!("simulate_swap_base_out: status {}", identity(amm.status));
                 return Err(AmmError::InvalidStatus.into());
             }
             let authority = Self::authority_id(program_id, AUTHORITY_AMM, amm.nonce as u8)?;
@@ -4086,7 +4086,7 @@ impl Processor {
                             Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
                         let native_pc_total = open_orders.native_pc_total;
                         let native_coin_total = open_orders.native_coin_total;
-                        msg!(&format!("simulate_run_crank pc_amount:{}, native_pc_total:{}, coin_amount:{}, native_coin_total:{}, need_take_pnl_pc:{}, need_take_pnl_coin:{}", amm_pc_vault.amount, native_pc_total, amm_coin_vault.amount, native_coin_total, amm.state_data.need_take_pnl_pc, amm.state_data.need_take_pnl_coin));
+                        msg!(&format!("simulate_run_crank pc_amount:{}, native_pc_total:{}, coin_amount:{}, native_coin_total:{}, need_take_pnl_pc:{}, need_take_pnl_coin:{}", amm_pc_vault.amount, native_pc_total, amm_coin_vault.amount, native_coin_total, identity(amm.state_data.need_take_pnl_pc), identity(amm.state_data.need_take_pnl_coin)));
                         let (total_pc_without_take_pnl, total_coin_without_take_pnl) =
                             Calculator::calc_total_without_take_pnl(
                                 amm_pc_vault.amount,
@@ -4109,7 +4109,10 @@ impl Processor {
                         );
                         msg!(&format!(
                             "simulate_run_crank x:{}, y:{}, place_x:{}, place_y:{}",
-                            x, y, target.placed_x, target.placed_y
+                            x,
+                            y,
+                            identity(target.placed_x),
+                            identity(target.placed_y)
                         ));
                         if x.is_zero() || y.is_zero() {
                             run_crank_data.run_crank = false;
@@ -4139,8 +4142,8 @@ impl Processor {
                                 "{}, {}, {}, {}",
                                 x,
                                 y,
-                                target.calc_pnl_x,
-                                target.calc_pnl_y
+                                identity(target.calc_pnl_x),
+                                identity(target.calc_pnl_y)
                             )
                             .as_str());
                             run_crank_data.run_crank = false;
@@ -4232,8 +4235,8 @@ impl Processor {
                                 "{}, {}, {}, {}",
                                 x,
                                 y,
-                                target.calc_pnl_x,
-                                target.calc_pnl_y
+                                identity(target.calc_pnl_x),
+                                identity(target.calc_pnl_y)
                             )
                             .as_str());
                             run_crank_data.run_crank = false;
@@ -4375,7 +4378,7 @@ impl Processor {
             }
         }
 
-        msg!("do_idle to_state {}", amm.state);
+        msg!("do_idle to_state {}", identity(amm.state));
         Ok(())
     }
 
@@ -4426,7 +4429,7 @@ impl Processor {
             }
             if x != target.target_x.into() || y != target.target_y.into() {
                 amm.state = AmmState::IdleState.into_u64();
-                msg!("do_plan: to_state {}", amm.state);
+                msg!("do_plan: to_state {}", identity(amm.state));
                 return Ok(());
             }
             let min_size: u64 = amm.min_size as u64;
@@ -4762,8 +4765,8 @@ impl Processor {
             .into_iter()
             .map(|item| item.client_order_id())
             .collect();
-        bids_client_ids.retain(|x| !target.replace_buy_client_id.contains(&x));
-        asks_client_ids.retain(|x| !target.replace_sell_client_id.contains(&x));
+        bids_client_ids.retain(|x| !identity(target.replace_buy_client_id).contains(&x));
+        asks_client_ids.retain(|x| !identity(target.replace_sell_client_id).contains(&x));
 
         let mut pc_avaliable = pc_vault_amount
             .checked_add(open_orders.native_pc_free)
@@ -5057,7 +5060,7 @@ impl Processor {
                 )?;
             }
         }
-        msg!("do_purge to_state {}", amm.state);
+        msg!("do_purge to_state {}", identity(amm.state));
         Ok(())
     }
 
@@ -5096,7 +5099,7 @@ impl Processor {
         if open_orders.free_slot_bits.count_zeros() > 100 && bids.is_empty() && asks.is_empty() {
             msg!(
                 "do_cancel_all to state :{}, count_zeros:{}",
-                amm.state,
+                identity(amm.state),
                 open_orders.free_slot_bits.count_zeros()
             );
             return Ok(());
@@ -5539,8 +5542,8 @@ impl Processor {
             msg!(arrform!(
                 LOG_SIZE,
                 "monitor_step Status:{}, order_num:{}",
-                amm.status,
-                amm.order_num
+                identity(amm.status),
+                identity(amm.order_num)
             )
             .as_str());
         } else {
@@ -5551,12 +5554,12 @@ impl Processor {
                 | AmmStatus::LiquidityOnly
                 | AmmStatus::SwapOnly
                 | AmmStatus::WaitingTrade => {
-                    msg!("monitor_step: AmmStatus:{}", amm.status);
+                    msg!("monitor_step: AmmStatus:{}", identity(amm.status));
                     return Err(AmmError::InvalidStatus.into());
                 }
                 AmmStatus::Initialized | AmmStatus::OrderBookOnly => match amm_state {
                     AmmState::IdleState => {
-                        msg!("monitor_step IdleState:{}", amm.state);
+                        msg!("monitor_step IdleState:{}", identity(amm.state));
                         let idle_accounts: &[AccountInfo] = &[
                             amm_info.clone(),
                             market_program_info.clone(),
@@ -5580,7 +5583,7 @@ impl Processor {
                         .unwrap();
                     }
                     AmmState::CancelAllOrdersState => {
-                        msg!("monitor_step CancelAllOrdersState:{}", amm.state);
+                        msg!("monitor_step CancelAllOrdersState:{}", identity(amm.state));
                         let cancel_all_orders_accounts: &[AccountInfo] = &[
                             amm_info.clone(),
                             market_program_info.clone(),
@@ -5609,7 +5612,7 @@ impl Processor {
                         .unwrap();
                     }
                     AmmState::PlanOrdersState => {
-                        msg!("monitor_step PlanOrdersState:{}", amm.state);
+                        msg!("monitor_step PlanOrdersState:{}", identity(amm.state));
                         let plan_buy_accounts: &[AccountInfo] = &[
                             amm_info.clone(),
                             market_info.clone(),
@@ -5631,7 +5634,7 @@ impl Processor {
                         .unwrap();
                     }
                     AmmState::CancelOrderState => {
-                        msg!("monitor_step CancelOrderState:{}", amm.state);
+                        msg!("monitor_step CancelOrderState:{}", identity(amm.state));
                         let cancel_order_accounts: &[AccountInfo] = &[
                             amm_info.clone(),
                             market_program_info.clone(),
@@ -5656,7 +5659,7 @@ impl Processor {
                         .unwrap();
                     }
                     AmmState::PlaceOrdersState => {
-                        msg!("monitor_step PlaceOrdersState:{}", amm.state);
+                        msg!("monitor_step PlaceOrdersState:{}", identity(amm.state));
                         let place_order_accounts: &[AccountInfo] = &[
                             amm_info.clone(),
                             amm_authority_info.clone(),
@@ -5688,7 +5691,7 @@ impl Processor {
                         .unwrap();
                     }
                     AmmState::PurgeOrderState => {
-                        msg!("monitor_step PurgeOrderState:{}", amm.state);
+                        msg!("monitor_step PurgeOrderState:{}", identity(amm.state));
                         let purge_orders_accounts: &[AccountInfo] = &[
                             amm_info.clone(),
                             market_program_info.clone(),
@@ -5711,7 +5714,7 @@ impl Processor {
                         .unwrap();
                     }
                     _ => {
-                        msg!("monitor_step InvalidState:{}", amm.state);
+                        msg!("monitor_step InvalidState:{}", identity(amm.state));
                     }
                 },
             }
@@ -6620,7 +6623,7 @@ mod test {
         target.calc_pnl_y = y.as_u128();
         println!(
              "init_pc_amount:{}, init_coin_amount:{}, liquidity:{}, sys_decimal_value:{}, calc_pnl_x:{}, calc_pnl_y:{}",
-             init_pc_amount, init_coin_amount, liquidity, amm.sys_decimal_value, target.calc_pnl_x, target.calc_pnl_y
+             init_pc_amount, init_coin_amount, liquidity, identity(amm.sys_decimal_value), identity(target.calc_pnl_x), identity(target.calc_pnl_y)
          );
 
         // withdraw
@@ -6689,7 +6692,7 @@ mod test {
             .unwrap();
         println!(
              "withdraw calc_pnl_x:{}, calc_pnl_y:{}, total_pc_without_take_pnl:{}, total_coin_without_take_pnl:{}",
-             target.calc_pnl_x, target.calc_pnl_y, total_pc_without_take_pnl, total_coin_without_take_pnl
+             identity(target.calc_pnl_x), identity(target.calc_pnl_y), total_pc_without_take_pnl, total_coin_without_take_pnl
          );
 
         // withdraw 2
