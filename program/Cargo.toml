@@ -18,7 +18,7 @@ devnet = []
 testnet = []
 
 [dependencies]
-solana-program = "<1.17.0"
+solana-program = "^1.18.16"
 spl-token = { version = "4.0.0", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "2.2.0", features = [
     "no-entrypoint",
