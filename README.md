@@ -58,7 +58,16 @@ Attention, check your configuration and confirm the environment you want to depl
 2. Add dependencies in your Cargo.toml
 ```rust
 [dependencies]
-raydium-library = { git = "https://github.com/raydium-io/raydium-library" }
+[features]
+# default is mainnet
+devnet = [
+    "amm-cli/devnet",
+    "common/devnet",
+]
+
+[dependencies]
+amm-cli = { git = "https://github.com/raydium-io/raydium-library" }
+common = { git = "https://github.com/raydium-io/raydium-library" }
 spl-token = { version = "4.0.0", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "2.2.0", features = [
     "no-entrypoint",
@@ -67,251 +76,109 @@ spl-token-2022 = { version = "0.9.0", features = ["no-entrypoint"] }
 solana-client = "<1.17.0"
 solana-sdk = "<1.17.0"
 anyhow = "1.0.53"
+clap = { version = "4.1.8", features = ["derive"] }
 ```
 
 3. Import dependent libraries
 ```rust
 #![allow(dead_code)]
-use anyhow::{format_err, Result};
-use raydium_library::amm;
-use std::str::FromStr;
+use anyhow::{Ok, Result};
+use clap::Parser;
 use solana_client::rpc_client::RpcClient;
-use solana_sdk::{
-    compute_budget::ComputeBudgetInstruction, pubkey::Pubkey, signature::Signer,
-    transaction::Transaction,
+use solana_sdk::{commitment_config::CommitmentConfig, signer::Signer};
+use std::sync::Arc;
+
+use {
+    amm_cli::{self, AmmCommands},
+    common::{common_types, common_utils, rpc},
 };
 ```
 
-2. initialize a new amm pool with an associate openbook market
+4. Custom configuration parameters in your code.
 ```rust
-// config params
-let wallet_file_path = "id.json";
-let cluster_url = "https://api.devnet.solana.com/";
-let amm_program = Pubkey::from_str("HWy1jotHpo6UqeQxx49dpYYdQB8wj9Qk9MdxwjLvDHB8")?;
-let market_program = Pubkey::from_str("EoTcMgcDRTJVZDMZWBoU6rhYHZfkNTVEAfz3uUJRcYGj")?;
-let market = Pubkey::from_str("74yqm5ihhMg5XJeqvC6oPsHaczjF6U9Rc8zs4wMnAGUL")?;
-let amm_coin_mint = Pubkey::from_str("2SiSpNowr7zUv5ZJHuzHszskQNaskWsNukhivCtuVLHo")?;
-let amm_pc_mint = Pubkey::from_str("GfmdKWR1KrttDsQkJfwtXovZw9bUBHYkPAEwB6wZqQvJ")?;
-// maintnet: 7YttLkHDoNj9wyDur5pM1ejNaAvT9X4eqaYcHQqtj2G5
-// devnet: 3XMrhbv989VxAMi3DErLV9eJht1pHppW5LbKxe9fkEFR
-let create_fee_destination = Pubkey::from_str("3XMrhbv989VxAMi3DErLV9eJht1pHppW5LbKxe9fkEFR")?;
+// default config
+let mut config = common_types::CommonConfig::default();
+// Replace the default configuration parameters you need
+config.set_cluster("http", "ws");
+config.set_wallet("your wallet path");
+config.set_amm_program("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8");
+config.set_openbook_program("srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX");
+config.set_slippage(50);
+```
 
-let client = RpcClient::new(cluster_url.to_string());
-let wallet = solana_sdk::signature::read_keypair_file(wallet_file_path)
-    .map_err(|_| format_err!("failed to read keypair from {}", wallet_file_path))?;
+5. Constructing a signed storage object.
+```rust
+let payer = common_utils::read_keypair_file(&config.wallet())?;
+let fee_payer = payer.pubkey();
+let mut signing_keypairs: Vec<Arc<dyn Signer>> = Vec::new();
+let payer: Arc<dyn Signer> = Arc::new(payer);
+if !signing_keypairs.contains(&payer) {
+    signing_keypairs.push(payer);
+}
+```
 
-let input_pc_amount = 10000_000000;
-let input_coin_amount = 10000_000000;
-// generate amm keys
-let amm_keys = raydium_library::amm::utils::get_amm_pda_keys(
-    &amm_program,
-    &market_program,
-    &market,
-    &amm_coin_mint,
-    &amm_pc_mint,
-)?;
-// build initialize instruction
-let build_init_instruction = raydium_library::amm::commands::initialize_amm_pool(
-    &amm_program,
-    &amm_keys,
-    &create_fee_destination,
-    &wallet.pubkey(),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_coin_mint,
-    ),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_pc_mint,
-    ),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_lp_mint,
-    ),
-    0,
-    input_pc_amount,
-    input_coin_amount,
-)?;
+6. initialize a new amm pool with an associate openbook market
+```rust
+// build initialize pool instruction
+let subcmd = AmmCommands::CreatePool {
+    market: Pubkey::from_str("The amm associated with openbook market").unwrap(),
+    coin_mint: Pubkey::from_str("The openbook market's coin_mint").unwrap(),
+    pc_mint: Pubkey::from_str("The openbook market's pc_mint").unwrap(),
+    user_token_coin: Pubkey::from_str("User's token coin").unwrap(),
+    user_token_pc: Pubkey::from_str("User's token pc").unwrap(),
+    init_coin_amount: 100000u64,
+    init_pc_amount: 100000u64,
+    open_time: 0,
+};
+let instruction = amm_cli::process_amm_commands(subcmd, &config).unwrap();
 ```
 
 3. deposit assets to an amm pool
 ```rust
-// config params
-let wallet_file_path = "id.json";
-let cluster_url = "https://api.devnet.solana.com/";
-let amm_program = Pubkey::from_str("HWy1jotHpo6UqeQxx49dpYYdQB8wj9Qk9MdxwjLvDHB8")?;
-let amm_pool_id = Pubkey::from_str("BbZjQanvSaE9me4adAitmTTaSgASvzaVignt4HRSM7ww")?;
-let slippage_bps = 50u64; // 0.5%
-let input_amount = 10000_000000;
-let base_side = 0; // 0: base coin; 1: base pc
-
-let client = RpcClient::new(cluster_url.to_string());
-let wallet = solana_sdk::signature::read_keypair_file(wallet_file_path)
-    .map_err(|_| format_err!("failed to read keypair from {}", wallet_file_path))?;
-
-// load amm keys
-let amm_keys = raydium_library::amm::utils::load_amm_keys(&client, &amm_program, &amm_pool_id)?;
-// load market keys
-let market_keys = raydium_library::amm::openbook::get_keys_for_market(
-    &client,
-    &amm_keys.market_program,
-    &amm_keys.market,
-)?;
-// calculate amm pool vault with load data at the same time or use simulate to calculate
-let result = raydium_library::amm::calculate_pool_vault_amounts(
-    &client,
-    &amm_program,
-    &amm_pool_id,
-    &amm_keys,
-    &market_keys,
-    amm::utils::CalculateMethod::Simulate,
-    Some(&wallet.pubkey()),
-)?;
-// calculate amounts
-let (max_coin_amount, max_pc_amount) =
-    raydium_library::amm::amm_math::deposit_amount_with_slippage(
-        result.pool_pc_vault_amount,
-        result.pool_coin_vault_amount,
-        input_amount,
-        base_side,
-        slippage_bps,
-    )?;
 // build deposit instruction
-let build_deposit_instruction = raydium_library::amm::commands::deposit(
-    &amm_program,
-    &amm_keys,
-    &market_keys,
-    &wallet.pubkey(),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_coin_mint,
-    ),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_pc_mint,
-    ),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_lp_mint,
-    ),
-    max_coin_amount,
-    max_pc_amount,
-    base_side,
-)?;
+let subcmd = AmmCommands::Deposit {
+    pool_id: Pubkey::from_str("The specified pool of the assets deposite to").unwrap(),
+    deposit_token_coin: Some(Pubkey::from_str("The specified token coin of the user deposit").unwrap()),
+    deposit_token_pc: Some(Pubkey::from_str("The specified token pc of the user deposit").unwrap()),
+    recipient_token_lp: Some(Pubkey::from_str("The specified lp token of the user will receive").unwrap()),
+    amount_specified: 100000u64,
+    another_min_limit: false,
+    base_coin: false,
+};
+let instruction = amm_cli::process_amm_commands(subcmd, &config).unwrap();
 ```
+### Note
+If the parameter of the deposit_token_coin, deposit_token_pc or recipient_token_lp is None, it will be ATA token by default.
 
 4. withdraw assets from amm pool
 ```rust
-// config params
-let wallet_file_path = "id.json";
-let cluster_url = "https://api.devnet.solana.com/";
-let amm_program = Pubkey::from_str("HWy1jotHpo6UqeQxx49dpYYdQB8wj9Qk9MdxwjLvDHB8")?;
-let amm_pool_id = Pubkey::from_str("BbZjQanvSaE9me4adAitmTTaSgASvzaVignt4HRSM7ww")?;
-// let slippage_bps = 50u64; // 0.5%
-let withdraw_lp_amount = 10000_000000;
-
-let client = RpcClient::new(cluster_url.to_string());
-let wallet = solana_sdk::signature::read_keypair_file(wallet_file_path)
-    .map_err(|_| format_err!("failed to read keypair from {}", wallet_file_path))?;
-
-// load amm keys
-let amm_keys = raydium_library::amm::utils::load_amm_keys(&client, &amm_program, &amm_pool_id)?;
-// load market keys
-let market_keys = raydium_library::amm::openbook::get_keys_for_market(
-    &client,
-    &amm_keys.market_program,
-    &amm_keys.market,
-)?;
 // build withdraw instruction
-let build_withdraw_instruction = raydium_library::amm::commands::withdraw(
-    &amm_program,
-    &amm_keys,
-    &market_keys,
-    &wallet.pubkey(),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_coin_mint,
-    ),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_pc_mint,
-    ),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &amm_keys.amm_lp_mint,
-    ),
-    withdraw_lp_amount,
-)?;
+let subcmd = AmmCommands::Withdraw {
+    pool_id: Pubkey::from_str("The specified pool of the assets withdraw from").unwrap(),
+    withdraw_token_lp: Some(Pubkey::from_str("The specified lp token of the user withdraw").unwrap()),
+    recipient_token_coin: Some(Pubkey::from_str("The specified token coin of the user will receive").unwrap()),
+    recipient_token_pc: Some(Pubkey::from_str("The specified token pc of the user will receive").unwrap()),
+    input_lp_amount: 100000u64,
+    slippage_limit: false,
+};
+let instruction = amm_cli::process_amm_commands(subcmd, &config).unwrap();
 ```
+### Note
+If the parameter of the withdraw_token_lp, recipient_token_coin or recipient_token_pc is None, it will be ATA token by default.
 
 5. swap
 ```rust
-// config params
-let wallet_file_path = "id.json";
-let cluster_url = "https://api.devnet.solana.com/";
-let amm_program = Pubkey::from_str("HWy1jotHpo6UqeQxx49dpYYdQB8wj9Qk9MdxwjLvDHB8")?;
-let amm_pool_id = Pubkey::from_str("BbZjQanvSaE9me4adAitmTTaSgASvzaVignt4HRSM7ww")?;
-let input_token_mint = Pubkey::from_str("GfmdKWR1KrttDsQkJfwtXovZw9bUBHYkPAEwB6wZqQvJ")?;
-let output_token_mint = Pubkey::from_str("2SiSpNowr7zUv5ZJHuzHszskQNaskWsNukhivCtuVLHo")?;
-let slippage_bps = 50u64; // 0.5%
-let amount_specified = 2000_000000u64;
-let swap_base_in = false;
-
-let client = RpcClient::new(cluster_url.to_string());
-let wallet = solana_sdk::signature::read_keypair_file(wallet_file_path)
-    .map_err(|_| format_err!("failed to read keypair from {}", wallet_file_path))?;
-
-// load amm keys
-let amm_keys = raydium_library::amm::utils::load_amm_keys(&client, &amm_program, &amm_pool_id)?;
-// load market keys
-let market_keys = raydium_library::amm::openbook::get_keys_for_market(
-    &client,
-    &amm_keys.market_program,
-    &amm_keys.market,
-)?;
-// calculate amm pool vault with load data at the same time or use simulate to calculate
-let result = raydium_library::amm::calculate_pool_vault_amounts(
-    &client,
-    &amm_program,
-    &amm_pool_id,
-    &amm_keys,
-    &market_keys,
-    amm::utils::CalculateMethod::Simulate,
-    Some(&wallet.pubkey()),
-)?;
-let direction = if input_token_mint == amm_keys.amm_coin_mint
-    && output_token_mint == amm_keys.amm_pc_mint
-{
-    amm::utils::SwapDirection::Coin2PC
-} else {
-    amm::utils::SwapDirection::PC2Coin
-};
-let other_amount_threshold = raydium_library::amm::swap_with_slippage(
-    result.pool_pc_vault_amount,
-    result.pool_coin_vault_amount,
-    result.swap_fee_numerator,
-    result.swap_fee_denominator,
-    direction,
-    amount_specified,
-    swap_base_in,
-    slippage_bps,
-)?;
 // build swap instruction
-let build_swap_instruction = raydium_library::amm::commands::swap(
-    &amm_program,
-    &amm_keys,
-    &market_keys,
-    &wallet.pubkey(),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &input_token_mint,
-    ),
-    &spl_associated_token_account::get_associated_token_address(
-        &wallet.pubkey(),
-        &output_token_mint,
-    ),
-    amount_specified,
-    other_amount_threshold,
-    swap_base_in,
-)?;
+let subcmd = AmmCommands::Swap {
+    pool_id: Pubkey::from_str(" The specified pool of trading").unwrap(),
+    user_input_token: Pubkey::from_str("The token of user want to swap from").unwrap(),
+    user_output_token: Some(Pubkey::from_str("The token of user want to swap to").unwrap()),
+    amount_specified: 100000u64,
+    base_out: false,
+};
+let instruction = amm_cli::process_amm_commands(subcmd, &config).unwrap();
 ```
+### Note
+If the parameter of the user_output_token is None, it will be ATA token by default.
+
+For more information, you can see the repo [raydium-library](https://github.com/raydium-io/raydium-library)
