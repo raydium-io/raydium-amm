@@ -29,17 +29,17 @@ cd raydium-amm/program
 
 ### Mainnet Build
 ```bash
-cargo build-bpf
+cargo build-sbf
 ```
 ### Devnet Build
 ```bash
-cargo build-bpf --features devnet
+cargo build-sbf --features devnet
 ```
 ### Localnet Build
 You must update these pubkeys in the "config_feature" as yours over the localnet feature before build;
 
 ```bash
-cargo build-bpf --features localnet
+cargo build-sbf --features localnet
 ```
 
 After building, the smart contract files are all located in the target directory.
