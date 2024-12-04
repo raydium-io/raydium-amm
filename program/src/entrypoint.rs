@@ -1,6 +1,6 @@
 //! Program entrypoint definitions
 
-#![cfg(all(target_arch = "sbf", not(feature = "no-entrypoint")))]
+#![cfg(not(feature = "no-entrypoint"))]
 
 use crate::{error::AmmError, processor::Processor};
 use solana_program::{
