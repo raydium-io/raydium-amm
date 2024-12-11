@@ -43,10 +43,14 @@ use solana_program::{
 use super::log::*;
 use arrayref::{array_ref, array_refs};
 use arrform::{arrform, ArrForm};
-use bytemuck::from_bytes_mut;
 use std::{
-    cell::RefMut, collections::VecDeque, convert::identity, convert::TryFrom, mem::size_of,
-    num::NonZeroU64, ops::Deref,
+    cell::{Ref, RefMut},
+    collections::VecDeque,
+    convert::identity,
+    convert::TryFrom,
+    mem::size_of,
+    num::NonZeroU64,
+    ops::Deref,
 };
 
 pub mod srm_token {
@@ -175,15 +179,6 @@ impl Processor {
         }
     }
 
-    fn load_orders<'a>(
-        orders_account: &'a AccountInfo,
-    ) -> Result<RefMut<'a, OpenOrders>, ProgramError> {
-        let (_, data) = serum_dex::state::strip_header::<[u8; 0], u8>(orders_account, false)?;
-        let open_orders: RefMut<'a, OpenOrders>;
-        open_orders = RefMut::map(data, |data| from_bytes_mut(data));
-        Ok(open_orders)
-    }
-
     pub fn load_serum_market_order<'a>(
         market_acc: &AccountInfo<'a>,
         open_orders_acc: &AccountInfo<'a>,
@@ -192,13 +187,12 @@ impl Processor {
         // Allow for the market flag to be set to AccountFlag::Disabled
         allow_disabled: bool,
     ) -> Result<(Box<MarketState>, Box<OpenOrders>), ProgramError> {
-        let market_state = Market::load(market_acc, &amm.market_program, allow_disabled)?;
-        let open_orders = market_state.load_orders_mut(
+        let market_state = Market::load_checked(market_acc, &amm.market_program, allow_disabled)?;
+        let open_orders = OpenOrders::load_checked(
             open_orders_acc,
+            Some(market_acc),
             Some(authority_acc),
             &amm.market_program,
-            None,
-            None,
         )?;
         if identity(open_orders.market) != market_acc.key.to_aligned_bytes() {
             return Err(AmmError::InvalidMarket.into());
@@ -248,8 +242,8 @@ impl Processor {
 
     fn get_amm_orders(
         open_orders: &OpenOrders,
-        bids: RefMut<Slab>,
-        asks: RefMut<Slab>,
+        bids: Ref<Slab>,
+        asks: Ref<Slab>,
     ) -> Result<(Vec<LeafNode>, Vec<LeafNode>), ProgramError> {
         let orders_number = open_orders.free_slot_bits.count_zeros();
         let mut bids_orders: Vec<LeafNode> = Vec::new();
@@ -291,8 +285,8 @@ impl Processor {
         bids_account: &AccountInfo,
         asks_account: &AccountInfo,
     ) -> Result<(Option<u64>, Option<u64>), ProgramError> {
-        let bids = market_state.load_bids_mut(&bids_account)?;
-        let asks = market_state.load_asks_mut(&asks_account)?;
+        let bids = market_state.load_bids_checked(&bids_account)?;
+        let asks = market_state.load_asks_checked(&asks_account)?;
         let (bids_orders, asks_orders) = Self::get_amm_orders(open_orders, bids, asks)?;
         let mut bid_best_price = None;
         let mut ask_best_price = None;
@@ -311,8 +305,8 @@ impl Processor {
         bids_account: &AccountInfo,
         asks_account: &AccountInfo,
     ) -> Result<(Option<u64>, Option<u64>), ProgramError> {
-        let bids = market_state.load_bids_mut(&bids_account)?;
-        let asks = market_state.load_asks_mut(&asks_account)?;
+        let bids = market_state.load_bids_checked(&bids_account)?;
+        let asks = market_state.load_asks_checked(&asks_account)?;
         let (bids_orders, asks_orders) = Self::get_amm_orders(open_orders, bids, asks)?;
         let mut bid_best_price = None;
         let mut ask_best_price = None;
@@ -1116,7 +1110,7 @@ impl Processor {
 
         // load and check market
         let market_state =
-            Market::load(market_info, &config_feature::openbook_program::id(), false)?;
+            Market::load_checked(market_info, &config_feature::openbook_program::id(), false)?;
         if identity(market_state.coin_mint) != amm_coin_vault.mint.to_aligned_bytes()
             || identity(market_state.coin_mint) != (*amm_coin_mint_info.key).to_aligned_bytes()
         {
@@ -1622,14 +1616,14 @@ impl Processor {
         let market_program_info = next_account_info(account_info_iter)?;
         let market_info = next_account_info(account_info_iter)?;
         let market_event_queue_info = next_account_info(account_info_iter)?;
-        let market_coin_vault_info = next_account_info(account_info_iter)?;
-        let market_pc_vault_info = next_account_info(account_info_iter)?;
-        let market_vault_signer = next_account_info(account_info_iter)?;
-        let mut referrer_pc_wallet = None;
+        let _market_coin_vault_info = next_account_info(account_info_iter)?;
+        let _market_pc_vault_info = next_account_info(account_info_iter)?;
+        let _market_vault_signer = next_account_info(account_info_iter)?;
+        let mut _referrer_pc_wallet = None;
         if input_account_len == ACCOUNT_LEN + 1 {
-            referrer_pc_wallet = Some(next_account_info(account_info_iter)?);
+            _referrer_pc_wallet = Some(next_account_info(account_info_iter)?);
             let referrer_pc_token =
-                Self::unpack_token_account(&referrer_pc_wallet.unwrap(), token_program_info.key)?;
+                Self::unpack_token_account(&_referrer_pc_wallet.unwrap(), token_program_info.key)?;
             check_assert_eq!(
                 referrer_pc_token.owner,
                 config_feature::referrer_pc_wallet::id(),
@@ -1646,6 +1640,12 @@ impl Processor {
         }
         if amm_info.owner != program_id {
             return Err(AmmError::InvalidOwner.into());
+        }
+        let enable_orderbook;
+        if AmmStatus::from_u64(amm.status).orderbook_permission() {
+            enable_orderbook = true;
+        } else {
+            enable_orderbook = false;
         }
 
         let (pda, _) = Pubkey::find_program_address(&[&AMM_CONFIG_SEED], program_id);
@@ -1722,13 +1722,53 @@ impl Processor {
             return Err(AmmError::InvalidPCMint.into());
         }
 
-        let (market_state, open_orders) = Self::load_serum_market_order(
-            market_info,
-            amm_open_orders_info,
-            amm_authority_info,
-            &amm,
-            false,
-        )?;
+        // calc the remaining total_pc & total_coin
+        let (mut total_pc_without_take_pnl, mut total_coin_without_take_pnl) = if enable_orderbook {
+            check_assert_eq!(
+                *market_info.key,
+                amm.market,
+                "market",
+                AmmError::InvalidMarket
+            );
+            check_assert_eq!(
+                *amm_open_orders_info.key,
+                amm.open_orders,
+                "open_orders",
+                AmmError::InvalidOpenOrders
+            );
+            let (market_state, open_orders) = Self::load_serum_market_order(
+                market_info,
+                amm_open_orders_info,
+                amm_authority_info,
+                &amm,
+                false,
+            )?;
+            if identity(market_state.coin_mint) != amm_coin_vault.mint.to_aligned_bytes()
+                || identity(market_state.coin_mint) != user_pnl_coin.mint.to_aligned_bytes()
+            {
+                return Err(AmmError::InvalidCoinMint.into());
+            }
+            if identity(market_state.pc_mint) != amm_pc_vault.mint.to_aligned_bytes()
+                || identity(market_state.pc_mint) != user_pnl_pc.mint.to_aligned_bytes()
+            {
+                return Err(AmmError::InvalidPCMint.into());
+            }
+            Calculator::calc_total_without_take_pnl(
+                amm_pc_vault.amount,
+                amm_coin_vault.amount,
+                &open_orders,
+                &amm,
+                &market_state,
+                &market_event_queue_info,
+                &amm_open_orders_info,
+            )?
+        } else {
+            Calculator::calc_total_without_take_pnl_no_orderbook(
+                amm_pc_vault.amount,
+                amm_coin_vault.amount,
+                &amm,
+            )?
+        };
 
         msg!(arrform!(
             LOG_SIZE,
@@ -1738,16 +1778,6 @@ impl Processor {
         )
         .as_str());
 
-        let (mut total_pc_without_take_pnl, mut total_coin_without_take_pnl) =
-            Calculator::calc_total_without_take_pnl(
-                amm_pc_vault.amount,
-                amm_coin_vault.amount,
-                &open_orders,
-                &amm,
-                &market_state,
-                &market_event_queue_info,
-                &amm_open_orders_info,
-            )?;
         let x1 = Calculator::normalize_decimal_v2(
             total_pc_without_take_pnl,
             amm.pc_decimals,
@@ -1807,71 +1837,9 @@ impl Processor {
             // update target_orders.calc_pnl_x & target_orders.calc_pnl_y
             target_orders.calc_pnl_x = x1.checked_sub(U128::from(delta_x)).unwrap().as_u128();
             target_orders.calc_pnl_y = y1.checked_sub(U128::from(delta_y)).unwrap().as_u128();
-        } else if amm.state_data.need_take_pnl_coin
-            <= amm_coin_vault
-                .amount
-                .checked_add(open_orders.native_coin_free)
-                .unwrap()
-            && amm.state_data.need_take_pnl_pc
-                <= amm_pc_vault
-                    .amount
-                    .checked_add(open_orders.native_pc_free)
-                    .unwrap()
-        {
-            // settle & transfer
-            Invokers::invoke_dex_settle_funds(
-                market_program_info.clone(),
-                market_info.clone(),
-                amm_open_orders_info.clone(),
-                amm_authority_info.clone(),
-                market_coin_vault_info.clone(),
-                market_pc_vault_info.clone(),
-                amm_coin_vault_info.clone(),
-                amm_pc_vault_info.clone(),
-                market_vault_signer.clone(),
-                token_program_info.clone(),
-                referrer_pc_wallet.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-            )?;
-            Invokers::token_transfer_with_authority(
-                token_program_info.clone(),
-                amm_coin_vault_info.clone(),
-                user_pnl_coin_info.clone(),
-                amm_authority_info.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-                amm.state_data.need_take_pnl_coin,
-            )?;
-            Invokers::token_transfer_with_authority(
-                token_program_info.clone(),
-                amm_pc_vault_info.clone(),
-                user_pnl_pc_info.clone(),
-                amm_authority_info.clone(),
-                AUTHORITY_AMM,
-                amm.nonce as u8,
-                amm.state_data.need_take_pnl_pc,
-            )?;
-            // clear need take pnl
-            amm.state_data.need_take_pnl_coin = 0u64;
-            amm.state_data.need_take_pnl_pc = 0u64;
-            // update target_orders.calc_pnl_x & target_orders.calc_pnl_y
-            target_orders.calc_pnl_x = x1.checked_sub(U128::from(delta_x)).unwrap().as_u128();
-            target_orders.calc_pnl_y = y1.checked_sub(U128::from(delta_y)).unwrap().as_u128();
-        } else if amm.state_data.need_take_pnl_coin
-            >= amm_coin_vault
-                .amount
-                .checked_add(open_orders.native_coin_total)
-                .unwrap()
-            || amm.state_data.need_take_pnl_pc
-                >= amm_pc_vault
-                    .amount
-                    .checked_add(open_orders.native_pc_total)
-                    .unwrap()
-        {
-            // calc error need to disable
-            amm.state = AmmState::CancelAllOrdersState.into_u64();
-            amm.status = AmmStatus::Disabled.into_u64();
+        } else {
+            // calc error
+            return Err(AmmError::TakePnlError.into());
         }
         amm.recent_epoch = Clock::get()?.epoch;
 
@@ -2040,8 +2008,8 @@ impl Processor {
                 &amm,
                 false,
             )?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             let (bids, asks) = Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
             // cancel all orders
             let mut amm_order_ids_vec = Vec::new();
@@ -2377,8 +2345,8 @@ impl Processor {
                 &amm,
                 false,
             )?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             (bids, asks) = Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
             (total_pc_without_take_pnl, total_coin_without_take_pnl) =
                 Calculator::calc_total_without_take_pnl(
@@ -2791,8 +2759,8 @@ impl Processor {
                 &amm,
                 false,
             )?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             (bids, asks) = Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
             (total_pc_without_take_pnl, total_coin_without_take_pnl) =
                 Calculator::calc_total_without_take_pnl(
@@ -3246,7 +3214,7 @@ impl Processor {
         let new_market_pc_lot_size;
         let new_market_coin_lot_size;
         {
-            let new_market_state = Market::load(
+            let new_market_state = Market::load_checked(
                 new_market_info,
                 &config_feature::openbook_program::id(),
                 false,
@@ -4080,8 +4048,8 @@ impl Processor {
                             &amm,
                             false,
                         )?;
-                        let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-                        let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+                        let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+                        let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
                         let (bids, asks) =
                             Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
                         let native_pc_total = open_orders.native_pc_total;
@@ -4211,8 +4179,8 @@ impl Processor {
                             amm.coin_decimals,
                             amm.sys_decimal_value,
                         );
-                        let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-                        let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+                        let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+                        let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
                         let (bids, asks) =
                             Self::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
                         if open_orders.free_slot_bits.count_zeros() > 100
@@ -4970,7 +4938,12 @@ impl Processor {
             target.place_orders_cur += 1;
             {
                 // reload account data to check avaliable pc and avaliable coin is enough to place order
-                let open_orders = Self::load_orders(amm_open_orders_info)?;
+                let open_orders = OpenOrders::load_checked(
+                    amm_open_orders_info,
+                    Some(market_info),
+                    Some(amm_authority_info),
+                    &amm.market_program,
+                )?;
                 let pc_vault = Self::unpack_token_account(&amm_pc_vault_info, &spl_token::id())?;
                 let coin_vault = Self::unpack_token_account(&amm_pc_vault_info, &spl_token::id())?;
                 pc_avaliable = pc_vault
@@ -5741,8 +5714,8 @@ impl Processor {
             amm,
             false,
         )?;
-        let bids_orders = market_state.load_bids_mut(market_bids_info)?;
-        let asks_orders = market_state.load_asks_mut(market_asks_info)?;
+        let bids_orders = market_state.load_bids_checked(market_bids_info)?;
+        let asks_orders = market_state.load_asks_checked(market_asks_info)?;
         let (bids, asks) = Processor::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
 
         let mut amm_order_ids_vec = Vec::new();
@@ -6137,8 +6110,8 @@ pub mod account_parser {
                 &amm,
                 false,
             )?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             let (bids, asks) = Processor::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
 
             let (mut total_pc_without_take_pnl, mut total_coin_without_take_pnl) =
@@ -6214,8 +6187,8 @@ pub mod account_parser {
                 &amm,
                 true,
             )?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             let (bids, asks) = Processor::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
 
             let args = CancelAllOrdersArgs {
@@ -6369,8 +6342,8 @@ pub mod account_parser {
                 &amm,
                 false,
             )?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             let (bids, asks) = Processor::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
             let (total_pc_without_take_pnl, total_coin_without_take_pnl) =
                 Calculator::calc_total_without_take_pnl(
@@ -6459,8 +6432,8 @@ pub mod account_parser {
                 &amm,
                 true,
             )?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             let (bids, asks) = Processor::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
 
             let args = PurgeOrderArgs {
@@ -6529,9 +6502,8 @@ pub mod account_parser {
                 &amm,
                 true,
             )?;
-            // let (myorders, _max_bid, _min_ask) = Processor::get_amm_orders_and_dex_best_price(&market_state, &open_orders, bids_acc, asks_acc)?;
-            let bids_orders = market_state.load_bids_mut(&market_bids_info)?;
-            let asks_orders = market_state.load_asks_mut(&market_asks_info)?;
+            let bids_orders = market_state.load_bids_checked(&market_bids_info)?;
+            let asks_orders = market_state.load_asks_checked(&market_asks_info)?;
             let (bids, asks) = Processor::get_amm_orders(&open_orders, bids_orders, asks_orders)?;
 
             let args = CancelOrderArgs {
