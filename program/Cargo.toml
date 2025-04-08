@@ -16,6 +16,7 @@ default = ["program"]
 client = ["serum_dex/client"]
 devnet = []
 testnet = []
+localnet = []
 
 [lib]
 name = "raydium_amm"

@@ -91,7 +91,23 @@ pub mod config_feature {
         solana_program::declare_id!("3XMrhbv989VxAMi3DErLV9eJht1pHppW5LbKxe9fkEFR");
     }
 }
-#[cfg(not(any(feature = "testnet", feature = "devnet")))]
+#[cfg(feature = "localnet")]
+pub mod config_feature {
+    pub mod amm_owner {
+        solana_program::declare_id!("6KDAqN5XPQzoFTQUCDn9h6tJ6hNptsrrNcLpiPdXHpsF");
+    }
+    pub mod openbook_program {
+        solana_program::declare_id!("2GqULbDDLFEiprhL3DSgQTW8SdZNQ8dq5UaRdq51XvG8");
+    }
+    pub mod referrer_pc_wallet {
+        solana_program::declare_id!("AkuAioFWeeiYp82Est5aVYVEeCHNCqf7cShAhyx1BDZz");
+    }
+    pub mod create_pool_fee_address {
+        solana_program::declare_id!("7a1ujxF3EZra2XjLcrfoYoB6E6KjwHyZ9MHMxWcgTVw1");
+    }
+}
+
+#[cfg(not(any(feature = "testnet", feature = "devnet", feature = "localnet")))]
 pub mod config_feature {
     pub mod amm_owner {
         solana_program::declare_id!("GThUX1Atko4tqhN2NaiTazWSeFWMuiUvfFnyJyUghFMJ");
