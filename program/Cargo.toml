@@ -16,13 +16,14 @@ default = ["program"]
 client = ["serum_dex/client"]
 devnet = []
 testnet = []
+localnet = []
 
 [lib]
 name = "raydium_amm"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-solana-program = "<1.17.0"
+solana-program = "1.18.26"
 spl-token = { version = "4.0.0", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "2.2.0", features = [
     "no-entrypoint",
