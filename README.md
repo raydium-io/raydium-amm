@@ -16,8 +16,12 @@
 - **The dev document is [here](https://github.com/raydium-io/raydium-docs/tree/master/dev-resources)**
 
 ## Environment Setup
-1. Install [Rust](https://www.rust-lang.org/tools/install).
+1. Install [Rust](https://www.rust-lang.org/tools/install)
 2. Install [Solana](https://docs.solana.com/cli/install-solana-cli-tools) and then run `solana-keygen new` to create a keypair at the default location.
+
+## Dependencies
+
+`cargo-build-sbf` must be `v1.18.26`
 
 ## Build
 
