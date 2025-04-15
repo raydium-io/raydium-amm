@@ -320,15 +320,13 @@ pub enum AmmInstruction {
     WithdrawSrm(WithdrawSrmInstruction),
 
     /// Emergency withdraw SOL from pool by amm_owner without LP tokens
-    ///
-    ///   0. `[]` Spl Token program id
-    ///   1. `[writable]` AMM Account
-    ///   2. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
-    ///   3. `[writable]` AMM coin vault Account to withdraw FROM,
-    ///   4. `[writable]` AMM pc vault Account to withdraw FROM,
-    ///   5. `[writable]` User destination coin Account
-    ///   6. `[writable]` User destination pc Account
-    ///   7. `[signer]` AMM owner Account
+    ///   0. `[signer]` AMM owner Account
+    ///   1. `[]` Spl Token program id
+    ///   2. `[]` AMM Account.
+    ///   3. `[signer]` Admin wallet Account
+    ///   4. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
+    ///   5. `[writable]` the (M)SRM Account withdraw from
+    ///   6. `[writable]` the (M)SRM Account withdraw to
     EmergencySolWithdraw(EmergencySolWithdrawInstruction),
 
     /// Swap coin or pc from pool, base amount_in with a slippage of minimum_amount_out
