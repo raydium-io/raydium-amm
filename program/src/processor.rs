@@ -2391,7 +2391,7 @@ impl Processor {
             return Err(AmmError::InsufficientFunds.into());
         }
         let swap_fee = U128::from(swap.amount_in)
-            .checked_mul(amm.fees.swap_fee_numerator.into())
+            .checked_mul(amm.swap_fee_numerator().into())
             .unwrap()
             .checked_ceil_div(amm.fees.swap_fee_denominator.into())
             .unwrap()
@@ -2806,7 +2806,7 @@ impl Processor {
             .checked_ceil_div(
                 (amm.fees
                     .swap_fee_denominator
-                    .checked_sub(amm.fees.swap_fee_numerator)
+                    .checked_sub(amm.swap_fee_numerator())
                     .unwrap())
                 .into(),
             )
@@ -3659,7 +3659,7 @@ impl Processor {
             swap_base_in.pool_data.amm_id = amm_info.key.to_string();
 
             let swap_fee = U128::from(swap.amount_in)
-                .checked_mul(amm.fees.swap_fee_numerator.into())
+                .checked_mul(amm.swap_fee_numerator().into())
                 .unwrap()
                 .checked_ceil_div(amm.fees.swap_fee_denominator.into())
                 .unwrap()
@@ -3896,7 +3896,7 @@ impl Processor {
                 .checked_ceil_div(
                     (amm.fees
                         .swap_fee_denominator
-                        .checked_sub(amm.fees.swap_fee_numerator)
+                        .checked_sub(amm.swap_fee_numerator())
                         .unwrap())
                     .into(),
                 )
@@ -5520,6 +5520,16 @@ impl Processor {
             )
             .as_str());
         } else {
+            // Fee update logic:
+            if matches!(amm_status, AmmStatus::Initialized | AmmStatus::SwapOnly) {
+                let clock = Clock::get()?;
+                if clock.unix_timestamp as u64 % crate::twap::TICK_SECONDS as u64 == 0 {
+                    let (total_pnl_pc, total_pnl_coin) =
+                        (amm.state_data.total_pnl_pc, amm.state_data.total_pnl_coin);
+                    amm.twap_buffer.update_price(total_pnl_pc, total_pnl_coin);
+                }
+            }
+
             match amm_status {
                 AmmStatus::Uninitialized
                 | AmmStatus::Disabled
@@ -6702,7 +6712,7 @@ mod test {
         amm.initialize(0, 0, 2, 9, 1000000, 1).unwrap();
 
         let swap_fee = U128::from(amount_in)
-            .checked_mul(amm.fees.swap_fee_numerator.into())
+            .checked_mul(amm.swap_fee_numerator().into())
             .unwrap()
             .checked_ceil_div(amm.fees.swap_fee_denominator.into())
             .unwrap()

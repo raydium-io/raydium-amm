@@ -12,6 +12,8 @@ pub mod math;
 pub mod processor;
 pub mod state;
 
+pub mod twap;
+
 // Export current solana-sdk types for downstream users who may also be building with a different solana-sdk version
 pub use solana_program;
 

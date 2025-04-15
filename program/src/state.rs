@@ -1,6 +1,10 @@
 //! State transition types
 
-use crate::{error::AmmError, math::Calculator};
+use crate::{
+    error::AmmError,
+    math::Calculator,
+    twap::{TwapBuffer, Volatility},
+};
 use serum_dex::state::ToAlignedBytes;
 use solana_program::{
     account_info::AccountInfo,
@@ -490,7 +494,9 @@ pub struct Fees {
     pub pnl_denominator: u64,
 
     /// numerator of the swap_fee
-    pub swap_fee_numerator: u64,
+    pub swap_fee_numerator_low: u64,
+    pub swap_fee_numerator_medium: u64,
+    pub swap_fee_numerator_high: u64,
     /// denominator of the swap_fee
     pub swap_fee_denominator: u64,
 }
@@ -501,7 +507,9 @@ impl Fees {
         validate_fraction(self.min_separate_numerator, self.min_separate_denominator)?;
         validate_fraction(self.trade_fee_numerator, self.trade_fee_denominator)?;
         validate_fraction(self.pnl_numerator, self.pnl_denominator)?;
-        validate_fraction(self.swap_fee_numerator, self.swap_fee_denominator)?;
+        validate_fraction(self.swap_fee_numerator_low, self.swap_fee_denominator)?;
+        validate_fraction(self.swap_fee_numerator_medium, self.swap_fee_denominator)?;
+        validate_fraction(self.swap_fee_numerator_high, self.swap_fee_denominator)?;
         Ok(())
     }
 
@@ -516,7 +524,9 @@ impl Fees {
         self.pnl_numerator = 12;
         self.pnl_denominator = 100;
         // swap_fee = 25 / 10000
-        self.swap_fee_numerator = 25;
+        self.swap_fee_numerator_low = 50;
+        self.swap_fee_numerator_low = 300;
+        self.swap_fee_numerator_low = 1000;
         self.swap_fee_denominator = TEN_THOUSAND;
         Ok(())
     }
@@ -533,7 +543,7 @@ impl Sealed for Fees {}
 impl Pack for Fees {
     const LEN: usize = 64;
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, 64];
+        let output = array_mut_ref![output, 0, 80];
         let (
             min_separate_numerator,
             min_separate_denominator,
@@ -541,21 +551,25 @@ impl Pack for Fees {
             trade_fee_denominator,
             pnl_numerator,
             pnl_denominator,
-            swap_fee_numerator,
+            swap_fee_numerator_low,
+            swap_fee_numerator_medium,
+            swap_fee_numerator_high,
             swap_fee_denominator,
-        ) = mut_array_refs![output, 8, 8, 8, 8, 8, 8, 8, 8];
+        ) = mut_array_refs![output, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8];
         *min_separate_numerator = self.min_separate_numerator.to_le_bytes();
         *min_separate_denominator = self.min_separate_denominator.to_le_bytes();
         *trade_fee_numerator = self.trade_fee_numerator.to_le_bytes();
         *trade_fee_denominator = self.trade_fee_denominator.to_le_bytes();
         *pnl_numerator = self.pnl_numerator.to_le_bytes();
         *pnl_denominator = self.pnl_denominator.to_le_bytes();
-        *swap_fee_numerator = self.swap_fee_numerator.to_le_bytes();
+        *swap_fee_numerator_low = self.swap_fee_numerator_low.to_le_bytes();
+        *swap_fee_numerator_medium = self.swap_fee_numerator_medium.to_le_bytes();
+        *swap_fee_numerator_high = self.swap_fee_numerator_high.to_le_bytes();
         *swap_fee_denominator = self.swap_fee_denominator.to_le_bytes();
     }
 
     fn unpack_from_slice(input: &[u8]) -> Result<Fees, ProgramError> {
-        let input = array_ref![input, 0, 64];
+        let input = array_ref![input, 0, 80];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             min_separate_numerator,
@@ -564,9 +578,11 @@ impl Pack for Fees {
             trade_fee_denominator,
             pnl_numerator,
             pnl_denominator,
-            swap_fee_numerator,
+            swap_fee_numerator_low,
+            swap_fee_numerator_medium,
+            swap_fee_numerator_high,
             swap_fee_denominator,
-        ) = array_refs![input, 8, 8, 8, 8, 8, 8, 8, 8];
+        ) = array_refs![input, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8];
         Ok(Self {
             min_separate_numerator: u64::from_le_bytes(*min_separate_numerator),
             min_separate_denominator: u64::from_le_bytes(*min_separate_denominator),
@@ -574,7 +590,9 @@ impl Pack for Fees {
             trade_fee_denominator: u64::from_le_bytes(*trade_fee_denominator),
             pnl_numerator: u64::from_le_bytes(*pnl_numerator),
             pnl_denominator: u64::from_le_bytes(*pnl_denominator),
-            swap_fee_numerator: u64::from_le_bytes(*swap_fee_numerator),
+            swap_fee_numerator_low: u64::from_le_bytes(*swap_fee_numerator_low),
+            swap_fee_numerator_medium: u64::from_le_bytes(*swap_fee_numerator_medium),
+            swap_fee_numerator_high: u64::from_le_bytes(*swap_fee_numerator_high),
             swap_fee_denominator: u64::from_le_bytes(*swap_fee_denominator),
         })
     }
@@ -707,6 +725,8 @@ pub struct AmmInfo {
     pub recent_epoch: u64,
     /// padding
     pub padding2: u64,
+
+    pub twap_buffer: TwapBuffer,
 }
 impl_loadable!(AmmInfo);
 
@@ -748,6 +768,14 @@ impl AmmInfo {
             return Err(AmmError::InvalidStatus.into());
         }
         Ok(data)
+    }
+
+    pub fn swap_fee_numerator(&self) -> u64 {
+        match self.twap_buffer.fee() {
+            Volatility::Low => self.fees.swap_fee_numerator_low,
+            Volatility::Medium => self.fees.swap_fee_numerator_medium,
+            Volatility::High => self.fees.swap_fee_numerator_high,
+        }
     }
 
     pub fn initialize(
@@ -841,6 +869,7 @@ impl AmmInfo {
         self.padding1 = Zeroable::zeroed();
         self.recent_epoch = get_recent_epoch().unwrap();
         self.padding2 = Zeroable::zeroed();
+        self.twap_buffer = TwapBuffer::default();
 
         Ok(())
     }
@@ -1044,7 +1073,9 @@ mod test {
         let trade_fee_denominator: u64 = 0x123456789fabcde0;
         let pnl_numerator: u64 = 0x12345678f9abcde0;
         let pnl_denominator: u64 = 0x1234567f89abcde0;
-        let swap_fee_numerator: u64 = 0x123456f789abcde0;
+        let swap_fee_numerator_low: u64 = 0x123456f789abcde0;
+        let swap_fee_numerator_medium: u64 = 0x123456f789abcde0;
+        let swap_fee_numerator_high: u64 = 0x123456f789abcde0;
         let swap_fee_denominator: u64 = 0x12345f6789abcde0;
 
         let need_take_pnl_coin: u64 = 0x1234f56789abcde0;
@@ -1133,7 +1164,11 @@ mod test {
         offset += 8;
         pool_data[offset..offset + 8].copy_from_slice(&pnl_denominator.to_le_bytes());
         offset += 8;
-        pool_data[offset..offset + 8].copy_from_slice(&swap_fee_numerator.to_le_bytes());
+        pool_data[offset..offset + 8].copy_from_slice(&swap_fee_numerator_low.to_le_bytes());
+        offset += 8;
+        pool_data[offset..offset + 8].copy_from_slice(&swap_fee_numerator_medium.to_le_bytes());
+        offset += 8;
+        pool_data[offset..offset + 8].copy_from_slice(&swap_fee_numerator_high.to_le_bytes());
         offset += 8;
         pool_data[offset..offset + 8].copy_from_slice(&swap_fee_denominator.to_le_bytes());
         offset += 8;
@@ -1250,8 +1285,8 @@ mod test {
         assert_eq!(pnl_numerator, unpack_pnl_numerator);
         let unpack_pnl_denominator = unpack_data.fees.pnl_denominator;
         assert_eq!(pnl_denominator, unpack_pnl_denominator);
-        let unpack_swap_fee_numerator = unpack_data.fees.swap_fee_numerator;
-        assert_eq!(swap_fee_numerator, unpack_swap_fee_numerator);
+        let unpack_swap_fee_numerator_low = unpack_data.fees.swap_fee_numerator_low;
+        assert_eq!(swap_fee_numerator_low, unpack_swap_fee_numerator_low);
         let unpack_swap_fee_denominator = unpack_data.fees.swap_fee_denominator;
         assert_eq!(swap_fee_denominator, unpack_swap_fee_denominator);
         let unpack_need_take_pnl_coin = unpack_data.state_data.need_take_pnl_coin;
