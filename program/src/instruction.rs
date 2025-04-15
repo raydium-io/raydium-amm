@@ -92,6 +92,14 @@ pub struct WithdrawSrmInstruction {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EmergencySolWithdrawInstruction {
+    pub amount: u64,
+    pub min_coin_amount: Option<u64>,
+    pub min_pc_amount: Option<u64>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SwapInstructionBaseIn {
     // SOURCE amount to transfer, output to DESTINATION is based on the exchange rate
     pub amount_in: u64,
@@ -310,6 +318,18 @@ pub enum AmmInstruction {
     ///   4. `[writable]` the (M)SRM Account withdraw from
     ///   5. `[writable]` the (M)SRM Account withdraw to
     WithdrawSrm(WithdrawSrmInstruction),
+
+    /// Emergency withdraw SOL from pool by amm_owner without LP tokens
+    ///
+    ///   0. `[]` Spl Token program id
+    ///   1. `[writable]` AMM Account
+    ///   2. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
+    ///   3. `[writable]` AMM coin vault Account to withdraw FROM,
+    ///   4. `[writable]` AMM pc vault Account to withdraw FROM,
+    ///   5. `[writable]` User destination coin Account
+    ///   6. `[writable]` User destination pc Account
+    ///   7. `[signer]` AMM owner Account
+    EmergencySolWithdraw(EmergencySolWithdrawInstruction),
 
     /// Swap coin or pc from pool, base amount_in with a slippage of minimum_amount_out
     ///
@@ -837,6 +857,21 @@ impl AmmInstruction {
                     _ => return Err(ProgramError::InvalidInstructionData.into()),
                 }
             }
+            Self::EmergencySolWithdraw(EmergencySolWithdrawInstruction {
+                        amount,
+                min_coin_amount,
+                min_pc_amount,
+            }) => {
+                buf.push(16);
+                buf.extend_from_slice(&amount.to_le_bytes());
+                if let Some(min_coin_amount) = min_coin_amount {
+                    buf.extend_from_slice(&min_coin_amount.to_le_bytes());
+                }
+                if let Some(min_pc_amount) = min_pc_amount {
+                    buf.extend_from_slice(&min_pc_amount.to_le_bytes());
+                }
+            }
+            _ => return Err(ProgramError::InvalidInstructionData.into()),
         }
         Ok(buf)
     }
