@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["program"]
+members = [
+  "program",
+  "openbook-dex-dep/assert-owner",
+  "openbook-dex-dep/common",
+  "openbook-dex-dep/dex",
+  "openbook-dex-dep/dex/crank",
+  "openbook-dex-dep/dex/permissioned",
+  "openbook-dex-dep/dex/fuzz",
+]
 
 [profile.release]
 overflow-checks = true

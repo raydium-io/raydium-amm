@@ -1,6 +1,7 @@
 //! Program entrypoint definitions
 
 #![cfg(not(feature = "no-entrypoint"))]
+#![allow(unexpected_cfgs)]
 
 use crate::{error::AmmError, processor::Processor};
 use solana_program::{

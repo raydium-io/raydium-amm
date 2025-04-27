@@ -1,0 +1,14 @@
+[alias]
+test-all = "test --all -- --nocapture"
+test-crank = "test -p crank -- --nocapture"
+test-permissioned = "test -p serum-dex-permissioned -- --nocapture"
+fuzz-run = "run --manifest-path openbook-dex-dep/dex/fuzz/Cargo.toml"
+test-devnet = "test --all --features devnet -- --nocapture"
+test-testnet = "test --all --features testnet -- --nocapture"
+
+
+build-all = "build --workspace"
+build-crank = "build -p crank"
+build-permissioned = "build -p serum-dex-permissioned"
+build-devnet = "build --workspace --features devnet"
+build-testnet = "build --workspace --features testnet" 
