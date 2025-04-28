@@ -5,6 +5,7 @@ test-permissioned = "test -p serum-dex-permissioned -- --nocapture"
 fuzz-run = "run --manifest-path openbook-dex-dep/dex/fuzz/Cargo.toml"
 test-devnet = "test --all --features devnet -- --nocapture"
 test-testnet = "test --all --features testnet -- --nocapture"
+test-permissioned-markets = "test --manifest-path openbook-dex-dep/dex/tests/permissioned/programs/permissioned-markets/Cargo.toml -- --nocapture"
 
 
 build-all = "build --workspace"
