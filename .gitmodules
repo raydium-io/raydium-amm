@@ -1,4 +1,0 @@
-[submodule "openbook-dex-dep"]
-	path = openbook-dex-dep
-	url = https://github.com/Vai3soh/openbook-dex.git
-	branch = feature/update-solana-program-2.1.0
