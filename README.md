@@ -11,13 +11,33 @@
 
 ## Overview
 
-- **The Raydium AMM is an on-chain smart contract based on the “constant product” in a permissionless and decentralized manner built on the Solana blockchain.And it also shares its liquidity according to the Fibonacci sequence in the form of limit orders on [OpenBook](https://github.com/openbook-dex/program), the primary central limit order book (CLOB) of Solana**
+- **The Raydium AMM is an on-chain smart contract based on the "constant product" in a permissionless and decentralized manner built on the Solana blockchain.And it also shares its liquidity according to the Fibonacci sequence in the form of limit orders on [OpenBook](https://github.com/openbook-dex/program), the primary central limit order book (CLOB) of Solana**
 - **The audit process is [here](https://github.com/raydium-io/raydium-docs/tree/master/audit)**
 - **The dev document is [here](https://github.com/raydium-io/raydium-docs/tree/master/dev-resources)**
 
 ## Environment Setup
 1. Install [Rust](https://www.rust-lang.org/tools/install).
 2. Install [Solana](https://docs.solana.com/cli/install-solana-cli-tools) and then run `solana-keygen new` to create a keypair at the default location.
+
+# On-chain program (BPF) build
+cargo build-sbf
+
+# Build helper crates
+cargo build-all            # build --workspace
+cargo build-crank          # build -p crank
+cargo build-permissioned   # build -p serum-dex-permissioned
+cargo build-devnet         # build --workspace --features devnet
+cargo build-testnet        # build --workspace --features testnet
+
+# Run tests
+cargo test-all             # test --all -- --nocapture
+cargo test-crank           # test -p crank -- --nocapture
+cargo test-permissioned    # test -p serum-dex-permissioned -- --nocapture
+cargo test-devnet          # test --all --features devnet -- --nocapture
+cargo test-testnet         # test --all --features testnet -- --nocapture
+
+# Fuzz harness
+cargo fuzz-run             # run --manifest-path openbook-dex-dep/dex/fuzz/Cargo.toml
 
 ## Build
 
@@ -68,13 +88,11 @@ devnet = [
 [dependencies]
 amm-cli = { git = "https://github.com/raydium-io/raydium-library" }
 common = { git = "https://github.com/raydium-io/raydium-library" }
-spl-token = { version = "4.0.0", features = ["no-entrypoint"] }
-spl-associated-token-account = { version = "2.2.0", features = [
-    "no-entrypoint",
-] }
+spl-token = { version = "7.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
 spl-token-2022 = { version = "0.9.0", features = ["no-entrypoint"] }
-solana-client = "<1.17.0"
-solana-sdk = "<1.17.0"
+solana-client = "2.1.0"
+solana-sdk = "2.1.0"
 anyhow = "1.0.53"
 clap = { version = "4.1.8", features = ["derive"] }
 ```

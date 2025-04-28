@@ -7,6 +7,7 @@ use solana_program::{
     program_error::{PrintProgramError, ProgramError},
 };
 use thiserror::Error;
+use serum_dex::error::DexError;
 
 /// Errors that may be returned by the TokenAmm program.
 #[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
@@ -103,7 +104,7 @@ pub enum AmmError {
     /// The owner saved in target is not match with this amm pool
     #[error("The owner saved in target is not match with this amm pool")]
     InvalidTargetOwner,
-    /// The amm account owner is not match with this program"
+    /// The amm account owner is not match with this program
     #[error("The amm account owner is not match with this program")]
     InvalidAmmAccountOwner,
     /// The params set is invalid
@@ -216,6 +217,12 @@ pub enum AmmError {
 impl From<AmmError> for ProgramError {
     fn from(e: AmmError) -> Self {
         ProgramError::Custom(e as u32)
+    }
+}
+
+impl From<DexError> for AmmError {
+    fn from(_error: DexError) -> Self {
+        AmmError::UnknownAmmError
     }
 }
 impl<T> DecodeError<T> for AmmError {

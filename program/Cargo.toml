@@ -22,15 +22,11 @@ name = "raydium_amm"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-solana-program = "<1.17.0"
-spl-token = { version = "4.0.0", features = ["no-entrypoint"] }
-spl-associated-token-account = { version = "2.2.0", features = [
-    "no-entrypoint",
-] }
-serum_dex = { version = "0.5.10", git = "https://github.com/raydium-io/openbook-dex", features = [
-    "no-entrypoint",
-    "program",
-] }
+solana-program = "^2.1.0"
+spl-token = { version = "=7.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
+serum_dex = { git = "https://github.com/Vai3soh/openbook-dex.git", branch = "feature/update-solana-program-2.1.0", package = "serum_dex", default-features = false, features = ["client","no-entrypoint"] }
+
 solana-security-txt = "1.1.1"
 serde_json = { version = "1.0.56" }
 serde = { version = "1.0", features = ["derive"] }
