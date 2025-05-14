@@ -22,9 +22,9 @@ name = "raydium_amm"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-solana-program = "<1.17.0"
-spl-token = { version = "4.0.0", features = ["no-entrypoint"] }
-spl-associated-token-account = { version = "2.2.0", features = [
+solana-program = "=2.1.0"
+spl-token = { version = "=7.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "6.0.0", features = [
     "no-entrypoint",
 ] }
 serum_dex = { version = "0.5.10", git = "https://github.com/raydium-io/openbook-dex", features = [
@@ -43,10 +43,11 @@ num-traits = "0.2.12"
 bytemuck = { version = "1.4.0" }
 safe-transmute = "0.11.0"
 thiserror = "1.0.20"
-uint = "0.9.5"
+uint = "0.10.0"
 
 [dev-dependencies]
 bumpalo = { version = "3.4.0", features = ["collections"] }
+proptest = "1.6"
 
 [profile.release]
 lto = "fat"
