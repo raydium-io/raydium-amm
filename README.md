@@ -7,7 +7,7 @@
 | Environment         |   [PROGRAM](/program)                          |
 | ------------------- | ---------------------------------------------- |
 | Mainnet             | `675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8` |
-| Devnet              | `HWy1jotHpo6UqeQxx49dpYYdQB8wj9Qk9MdxwjLvDHB8` |
+| Devnet              | `DRaya7Kj3aMWQSy19kSjvmuwq9docCHofyP9kanQGaav` |
 
 ## Overview
 

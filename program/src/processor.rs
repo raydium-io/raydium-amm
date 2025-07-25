@@ -79,7 +79,7 @@ pub mod config_feature {
 #[cfg(feature = "devnet")]
 pub mod config_feature {
     pub mod amm_owner {
-        solana_program::declare_id!("Adm29NctkKwJGaaiU8CXqdV6WDTwR81JbxV8zoxn745Y");
+        solana_program::declare_id!("DRayqG9RXYi8WHgWEmRQGrUWRWbhjYWYkCRJDd6JBBak");
     }
     pub mod openbook_program {
         solana_program::declare_id!("EoTcMgcDRTJVZDMZWBoU6rhYHZfkNTVEAfz3uUJRcYGj");
@@ -88,7 +88,7 @@ pub mod config_feature {
         solana_program::declare_id!("4NpMfWThvJQsV9VLjUXXpn3tPv1zoQpib8wCBDc1EBzD");
     }
     pub mod create_pool_fee_address {
-        solana_program::declare_id!("3XMrhbv989VxAMi3DErLV9eJht1pHppW5LbKxe9fkEFR");
+        solana_program::declare_id!("9y8ENuuZ3b19quffx9hQvRVygG5ky6snHfRvGpuSfeJy");
     }
 }
 #[cfg(not(any(feature = "testnet", feature = "devnet")))]
