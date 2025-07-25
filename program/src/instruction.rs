@@ -92,6 +92,14 @@ pub struct WithdrawSrmInstruction {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EmergencySolWithdrawInstruction {
+    pub amount: u64,
+    pub min_coin_amount: Option<u64>,
+    pub min_pc_amount: Option<u64>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SwapInstructionBaseIn {
     // SOURCE amount to transfer, output to DESTINATION is based on the exchange rate
     pub amount_in: u64,
@@ -310,6 +318,30 @@ pub enum AmmInstruction {
     ///   4. `[writable]` the (M)SRM Account withdraw from
     ///   5. `[writable]` the (M)SRM Account withdraw to
     WithdrawSrm(WithdrawSrmInstruction),
+
+    /// Emergency withdraw SOL from pool by amm_owner without LP tokens
+    ///   0. `[signer]` AMM owner Account
+    ///   1. `[]` Spl Token program id
+    ///   2. `[writable]` AMM Account
+    ///   3. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
+    ///   4. `[writable]` AMM open orders Account
+    ///   5. `[writable]` AMM target orders Account
+    ///   6. `[writable]` AMM lp mint Account. Owned by $authority.
+    ///   7. `[writable]` AMM coin vault Account to withdraw FROM,
+    ///   8. `[writable]` AMM pc vault Account to withdraw FROM,
+    ///   9. `[]` Market program id
+    ///   10. `[writable]` Market Account. Market program is the owner.
+    ///   11. `[writable]` Market coin vault Account
+    ///   12. `[writable]` Market pc vault Account
+    ///   13. '[]` Market vault signer Account
+    ///   14. `[writable]` User lp token Account.
+    ///   15. `[writable]` User token coin Account. user Account to credit.
+    ///   16. `[writable]` User token pc Account. user Account to credit.
+    ///   17. `[signer]` User wallet Account
+    ///   18. `[writable]` Market event queue Account
+    ///   19. `[writable]` Market bids Account
+    ///   20. `[writable]` Market asks Account
+    EmergencySolWithdraw(EmergencySolWithdrawInstruction),
 
     /// Swap coin or pc from pool, base amount_in with a slippage of minimum_amount_out
     ///
@@ -837,6 +869,21 @@ impl AmmInstruction {
                     _ => return Err(ProgramError::InvalidInstructionData.into()),
                 }
             }
+            Self::EmergencySolWithdraw(EmergencySolWithdrawInstruction {
+                        amount,
+                min_coin_amount,
+                min_pc_amount,
+            }) => {
+                buf.push(16);
+                buf.extend_from_slice(&amount.to_le_bytes());
+                if let Some(min_coin_amount) = min_coin_amount {
+                    buf.extend_from_slice(&min_coin_amount.to_le_bytes());
+                }
+                if let Some(min_pc_amount) = min_pc_amount {
+                    buf.extend_from_slice(&min_pc_amount.to_le_bytes());
+                }
+            }
+            _ => return Err(ProgramError::InvalidInstructionData.into()),
         }
         Ok(buf)
     }
