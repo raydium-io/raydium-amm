@@ -52,97 +52,91 @@ impl Calculator {
         val.try_into().map_err(|_| AmmError::ConversionFailure)
     }
 
-    pub fn calc_x_power(last_x: U256, last_y: U256, current_x: U256, current_y: U256) -> U256 {
-        // must be use u256, because u128 may be overflow
-        let x_power = last_x
+    pub fn calc_x_power(last_x: U256, last_y: U256, current_x: U256, current_y: U256) -> Result<U256, AmmError> {
+        // Safety: Changed to Result to prevent runtime panics on overflow
+        last_x
             .checked_mul(last_y)
-            .unwrap()
+            .ok_or(AmmError::CalculationFailure)?
             .checked_mul(current_x)
-            .unwrap()
+            .ok_or(AmmError::CalculationFailure)?
             .checked_div(current_y)
-            .unwrap();
-        x_power
+            .ok_or(AmmError::CalculationFailure)
     }
 
-    // out: 0, 1, 2, 3, 5, 8, 13, 21, 34, 55
+    // OPTIMIZATION: Pre-allocate vector capacity to avoid re-allocations in BPF
     pub fn fibonacci(order_num: u64) -> Vec<u64> {
-        let mut fb = Vec::new();
+        let mut fb = Vec::with_capacity(order_num as usize);
         for i in 0..order_num {
             if i == 0 {
                 fb.push(0u64);
             } else if i == 1 {
                 fb.push(1u64);
             } else if i == 2 {
+                // Note: Custom logic from original code (0, 1, 2...) instead of (0, 1, 1...)
                 fb.push(2u64);
             } else {
                 let ret = fb[(i - 1u64) as usize] + fb[(i - 2u64) as usize];
                 fb.push(ret);
             };
         }
-        return fb;
+        fb
     }
 
-    pub fn normalize_decimal(val: u64, native_decimal: u64, sys_decimal_value: u64) -> u64 {
-        // e.g., amm.sys_decimal_value is 10**6, native_decimal is 10**9, price is 1.23, this function will convert (1.23*10**9) -> (1.23*10**6)
-        //let ret:u64 = val.checked_mul(amm.sys_decimal_value).unwrap().checked_div((10 as u64).pow(native_decimal.into())).unwrap();
-        let ret_mut = (U128::from(val))
+    pub fn normalize_decimal(val: u64, native_decimal: u64, sys_decimal_value: u64) -> Result<u64, AmmError> {
+        let ret_mut = U128::from(val)
             .checked_mul(sys_decimal_value.into())
-            .unwrap();
-        let ret = Self::to_u64(
-            ret_mut
-                .checked_div(U128::from(10).checked_pow(native_decimal.into()).unwrap())
-                .unwrap()
-                .as_u128(),
-        )
-        .unwrap();
-        ret
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let denominator = U128::from(10)
+            .checked_pow(native_decimal.into())
+            .ok_or(AmmError::CalculationFailure)?;
+
+        let result_u128 = ret_mut
+            .checked_div(denominator)
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        Self::to_u64(result_u128.as_u128())
     }
 
-    pub fn restore_decimal(val: U128, native_decimal: u64, sys_decimal_value: u64) -> U128 {
-        // e.g., amm.sys_decimal_value is 10**6, native_decimal is 10**9, price is 1.23, this function will convert (1.23*10**6) -> (1.23*10**9)
-        // let ret:u64 = val.checked_mul((10 as u64).pow(native_decimal.into())).unwrap().checked_div(amm.sys_decimal_value).unwrap();
-        let ret_mut = val
-            .checked_mul(U128::from(10).checked_pow(native_decimal.into()).unwrap())
-            .unwrap();
-        let ret = ret_mut.checked_div(sys_decimal_value.into()).unwrap();
-        ret
+    pub fn restore_decimal(val: U128, native_decimal: u64, sys_decimal_value: u64) -> Result<U128, AmmError> {
+        let multiplier = U128::from(10)
+            .checked_pow(native_decimal.into())
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        val.checked_mul(multiplier)
+            .ok_or(AmmError::CalculationFailure)?
+            .checked_div(sys_decimal_value.into())
+            .ok_or(AmmError::CalculationFailure)
     }
 
-    pub fn normalize_decimal_v2(val: u64, native_decimal: u64, sys_decimal_value: u64) -> U128 {
-        // e.g., amm.sys_decimal_value is 10**6, native_decimal is 10**9, price is 1.23, this function will convert (1.23*10**9) -> (1.23*10**6)
-        //let ret:u64 = val.checked_mul(amm.sys_decimal_value).unwrap().checked_div((10 as u64).pow(native_decimal.into())).unwrap();
-        let ret_mut = (U128::from(val))
+    pub fn normalize_decimal_v2(val: u64, native_decimal: u64, sys_decimal_value: u64) -> Result<U128, AmmError> {
+        let ret_mut = U128::from(val)
             .checked_mul(sys_decimal_value.into())
-            .unwrap();
-        let ret = ret_mut
-            .checked_div(U128::from(10).checked_pow(native_decimal.into()).unwrap())
-            .unwrap();
-        ret
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let denominator = U128::from(10)
+            .checked_pow(native_decimal.into())
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        ret_mut
+            .checked_div(denominator)
+            .ok_or(AmmError::CalculationFailure)
     }
 
-    pub fn floor_lot(val: u64, lot_size: u64) -> u64 {
-        // all numbers are in normalized decimal already
-        let unit: u64 = val.checked_div(lot_size).unwrap();
-        let ret: u64 = unit.checked_mul(lot_size).unwrap();
-        ret
+    pub fn floor_lot(val: u64, lot_size: u64) -> Result<u64, AmmError> {
+        let unit = val.checked_div(lot_size).ok_or(AmmError::CalculationFailure)?;
+        unit.checked_mul(lot_size).ok_or(AmmError::CalculationFailure)
     }
 
-    pub fn ceil_lot(val: u64, lot_size: u64) -> u64 {
-        let unit: u128 = (val as u128).checked_ceil_div(lot_size as u128).unwrap();
-        let ret: u64 = Self::to_u64(unit).unwrap().checked_mul(lot_size).unwrap();
-        ret
+    pub fn ceil_lot(val: u64, lot_size: u64) -> Result<u64, AmmError> {
+        let unit = (val as u128)
+            .checked_ceil_div(lot_size as u128)
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        Self::to_u64(unit)?
+            .checked_mul(lot_size)
+            .ok_or(AmmError::CalculationFailure)
     }
-
-    /*
-        o_pls = pls * (cls * pc_dec) / (dec * c_dec) => convert_out_pc_lot_sz
-        pls = dec * o_pls * c_dec / (cls * pc_dec)  => convert_in_pc_lot_sz
-
-        c_sz = o_c_sz * cls * dec / c_dec => convert_in_vol
-        o_c_sz = c_sz * c_dec / (cls * dec) => convert_out_vol
-
-        p = o_p * pls => convert_in_price
-        o_p = p / pls => convert_out_price
-    */
 
     // convert internal pc_lot_size -> srm pc_lot_size
     pub fn convert_out_pc_lot_size(
@@ -151,17 +145,19 @@ impl Calculator {
         pc_lot_size: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
-        let native_lot_size = Self::to_u64(
-            ((U128::from(pc_lot_size)
-                * U128::from(coin_lot_size)
-                * (U128::from(10).checked_pow(pc_decimals.into()).unwrap()))
-                / (U128::from(sys_decimal_value)
-                    * (U128::from(10).checked_pow(coin_decimals.into()).unwrap())))
-            .as_u128(),
-        )
-        .unwrap();
-        native_lot_size
+    ) -> Result<u64, AmmError> {
+        let numerator = U128::from(pc_lot_size)
+            .checked_mul(coin_lot_size.into())
+            .ok_or(AmmError::CalculationFailure)?
+            .checked_mul(U128::from(10).checked_pow(pc_decimals.into()).ok_or(AmmError::CalculationFailure)?)
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let denominator = U128::from(sys_decimal_value)
+            .checked_mul(U128::from(10).checked_pow(coin_decimals.into()).ok_or(AmmError::CalculationFailure)?)
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let result = numerator.checked_div(denominator).ok_or(AmmError::CalculationFailure)?;
+        Self::to_u64(result.as_u128())
     }
 
     // convert srm pc_lot_size -> internal pc_lot_size
@@ -171,73 +167,69 @@ impl Calculator {
         pc_lot_size: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
-        let native_lot_size = Self::to_u64(
-            (U128::from(pc_lot_size)
-                .checked_mul(sys_decimal_value.into())
-                .unwrap()
-                .checked_mul(U128::from(10).checked_pow(coin_decimals.into()).unwrap())
-                .unwrap())
-            .checked_div(
-                U128::from(coin_lot_size)
-                    .checked_mul(U128::from(10).checked_pow(pc_decimals.into()).unwrap())
-                    .unwrap(),
-            )
-            .unwrap()
-            .as_u128(),
-        )
-        .unwrap();
-        native_lot_size
+    ) -> Result<u64, AmmError> {
+        let num_part1 = U128::from(pc_lot_size)
+            .checked_mul(sys_decimal_value.into())
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let num_part2 = U128::from(10)
+            .checked_pow(coin_decimals.into())
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let numerator = num_part1.checked_mul(num_part2).ok_or(AmmError::CalculationFailure)?;
+
+        let den_part1 = U128::from(coin_lot_size);
+        let den_part2 = U128::from(10)
+            .checked_pow(pc_decimals.into())
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let denominator = den_part1.checked_mul(den_part2).ok_or(AmmError::CalculationFailure)?;
+
+        let result = numerator.checked_div(denominator).ok_or(AmmError::CalculationFailure)?;
+        Self::to_u64(result.as_u128())
     }
 
-    // convert srm price -> internal price
-    pub fn convert_in_price(val: u64, pc_lot_size: u64) -> u64 {
-        let price = val.checked_mul(pc_lot_size).unwrap();
-        price
+    pub fn convert_in_price(val: u64, pc_lot_size: u64) -> Result<u64, AmmError> {
+        val.checked_mul(pc_lot_size).ok_or(AmmError::CalculationFailure)
     }
 
-    // convert internal price -> srm price
-    pub fn convert_price_out(val: u64, pc_lot_size: u64) -> u64 {
-        let price = val.checked_div(pc_lot_size).unwrap();
-        price
+    pub fn convert_price_out(val: u64, pc_lot_size: u64) -> Result<u64, AmmError> {
+        val.checked_div(pc_lot_size).ok_or(AmmError::CalculationFailure)
     }
 
-    // convert srm coin size -> internal coin size
     pub fn convert_in_vol(
         val: u64,
         coin_decimal: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
-        let volume: U128 = U128::from(val)
+    ) -> Result<u64, AmmError> {
+        let volume = U128::from(val)
             .checked_mul(coin_lot_size.into())
-            .unwrap()
+            .ok_or(AmmError::CalculationFailure)?
             .checked_mul(sys_decimal_value.into())
-            .unwrap()
-            .checked_div(U128::from(10).checked_pow(coin_decimal.into()).unwrap())
-            .unwrap();
-        let ret: u64 = Self::to_u64(volume.as_u128()).unwrap();
-        ret
+            .ok_or(AmmError::CalculationFailure)?
+            .checked_div(U128::from(10).checked_pow(coin_decimal.into()).ok_or(AmmError::CalculationFailure)?)
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        Self::to_u64(volume.as_u128())
     }
 
-    // convert internal coin size -> srm coin size
     pub fn convert_vol_out(
         val: u64,
         coin_decimal: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
-        let volume: U128 = U128::from(val)
-            .checked_mul(U128::from(10).checked_pow(coin_decimal.into()).unwrap())
-            .unwrap()
-            .checked_div(
-                U128::from(coin_lot_size)
-                    .checked_mul(sys_decimal_value.into())
-                    .unwrap(),
-            )
-            .unwrap();
-        let ret: u64 = Self::to_u64(volume.as_u128()).unwrap();
-        ret
+    ) -> Result<u64, AmmError> {
+        let numerator = U128::from(val)
+            .checked_mul(U128::from(10).checked_pow(coin_decimal.into()).ok_or(AmmError::CalculationFailure)?)
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let denominator = U128::from(coin_lot_size)
+            .checked_mul(sys_decimal_value.into())
+            .ok_or(AmmError::CalculationFailure)?;
+            
+        let volume = numerator.checked_div(denominator).ok_or(AmmError::CalculationFailure)?;
+        Self::to_u64(volume.as_u128())
     }
 
     pub fn calc_exact_vault_in_serum<'a>(
@@ -246,43 +238,45 @@ impl Calculator {
         event_q_account: &'a AccountInfo,
         amm_open_account: &'a AccountInfo,
     ) -> Result<(u64, u64), AmmError> {
-        let event_q = market_state.load_event_queue_mut(event_q_account).unwrap();
+        // Uses Serum's load_event_queue_mut which returns Result usually, unwrapped here implies trust in data availability.
+        // Keeping unwrap() here only if load_event_queue_mut signature requires it or if error handling is done upstream, 
+        // but ideally this should also be safe.
+        let event_q = market_state.load_event_queue_mut(event_q_account).map_err(|_| AmmError::InvalidEventQueue)?;
+        
         let mut native_pc_total = open_orders.native_pc_total;
         let mut native_coin_total = open_orders.native_coin_total;
+        
         msg!("calc_exact len:{}", event_q.len());
         sol_log_compute_units();
+        
         for event in event_q.iter() {
             if identity(event.owner) != (*amm_open_account.key).to_aligned_bytes() {
                 continue;
             }
-            // msg!("{:?}", event.as_view().unwrap());
-            match event.as_view().unwrap() {
-                EventView::Fill {
-                    side,
-                    maker,
-                    native_qty_paid,
-                    native_qty_received,
-                    native_fee_or_rebate: _,
-                    fee_tier: _,
-                    order_id: _,
-                    owner: _,
-                    owner_slot: _,
-                    client_order_id: _,
-                } => {
-                    match side {
-                        Side::Bid if maker => {
-                            native_pc_total -= native_qty_paid;
-                            native_coin_total += native_qty_received;
-                        }
-                        Side::Ask if maker => {
-                            native_coin_total -= native_qty_paid;
-                            native_pc_total += native_qty_received;
-                        }
-                        _ => (),
-                    };
-                }
-                _ => {
-                    continue;
+            
+            // Safety: Handle potential view parsing error
+            if let Ok(view) = event.as_view() {
+                match view {
+                    EventView::Fill {
+                        side,
+                        maker,
+                        native_qty_paid,
+                        native_qty_received,
+                        ..
+                    } => {
+                        match side {
+                            Side::Bid if maker => {
+                                native_pc_total = native_pc_total.checked_sub(native_qty_paid).ok_or(AmmError::CalculationFailure)?;
+                                native_coin_total = native_coin_total.checked_add(native_qty_received).ok_or(AmmError::CalculationFailure)?;
+                            }
+                            Side::Ask if maker => {
+                                native_coin_total = native_coin_total.checked_sub(native_qty_paid).ok_or(AmmError::CalculationFailure)?;
+                                native_pc_total = native_pc_total.checked_add(native_qty_received).ok_or(AmmError::CalculationFailure)?;
+                            }
+                            _ => (),
+                        };
+                    }
+                    _ => continue,
                 }
             }
         }
@@ -311,11 +305,13 @@ impl Calculator {
             .ok_or(AmmError::CheckedAddOverflow)?
             .checked_sub(amm.state_data.need_take_pnl_pc)
             .ok_or(AmmError::CheckedSubOverflow)?;
+            
         let total_coin_without_take_pnl = coin_amount
             .checked_add(coin_total_in_serum)
             .ok_or(AmmError::CheckedAddOverflow)?
             .checked_sub(amm.state_data.need_take_pnl_coin)
             .ok_or(AmmError::CheckedSubOverflow)?;
+            
         Ok((total_pc_without_take_pnl, total_coin_without_take_pnl))
     }
 
@@ -333,41 +329,38 @@ impl Calculator {
         Ok((total_pc_without_take_pnl, total_coin_without_take_pnl))
     }
 
-    pub fn get_max_buy_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> u64 {
-        // max_size = x / (1.0025 * price) - y
+    pub fn get_max_buy_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> Result<u64, AmmError> {
         let price_with_fee = U128::from(price)
-            .checked_mul(U128::from(
-                amm.fees.trade_fee_denominator + amm.fees.trade_fee_numerator,
-            ))
-            .unwrap()
+            .checked_mul(U128::from(amm.fees.trade_fee_denominator + amm.fees.trade_fee_numerator))
+            .ok_or(AmmError::CalculationFailure)?
             .checked_div(U128::from(amm.fees.trade_fee_denominator))
-            .unwrap();
+            .ok_or(AmmError::CalculationFailure)?;
+            
         let mut max_size = U128::from(x)
             .checked_mul(amm.sys_decimal_value.into())
-            .unwrap()
+            .ok_or(AmmError::CalculationFailure)?
             .checked_div(price_with_fee)
-            .unwrap();
+            .ok_or(AmmError::CalculationFailure)?;
+            
         max_size = max_size.saturating_sub(y.into());
-        Self::to_u64(max_size.as_u128()).unwrap()
+        Self::to_u64(max_size.as_u128())
     }
 
-    pub fn get_max_sell_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> u64 {
-        // let max_size = y - x / (p / 1.0025)
+    pub fn get_max_sell_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> Result<u64, AmmError> {
         let price_with_fee = U128::from(price)
             .checked_mul(amm.fees.trade_fee_denominator.into())
-            .unwrap()
-            .checked_div(U128::from(
-                amm.fees.trade_fee_denominator + amm.fees.trade_fee_numerator,
-            ))
-            .unwrap();
+            .ok_or(AmmError::CalculationFailure)?
+            .checked_div(U128::from(amm.fees.trade_fee_denominator + amm.fees.trade_fee_numerator))
+            .ok_or(AmmError::CalculationFailure)?;
+            
         let second_part = U128::from(x)
             .checked_mul(amm.sys_decimal_value.into())
-            .unwrap()
-            .checked_div(price_with_fee.into())
-            .unwrap();
+            .ok_or(AmmError::CalculationFailure)?
+            .checked_div(price_with_fee)
+            .ok_or(AmmError::CalculationFailure)?;
 
         let max_size = U128::from(y).saturating_sub(second_part);
-        Self::to_u64(max_size.as_u128()).unwrap()
+        Self::to_u64(max_size.as_u128())
     }
 
     pub fn swap_token_amount_base_in(
@@ -375,37 +368,25 @@ impl Calculator {
         total_pc_without_take_pnl: U128,
         total_coin_without_take_pnl: U128,
         swap_direction: SwapDirection,
-    ) -> U128 {
-        let amount_out;
+    ) -> Result<U128, AmmError> {
         match swap_direction {
             SwapDirection::Coin2PC => {
-                // (x + delta_x) * (y + delta_y) = x * y
-                // (coin + amount_in) * (pc - amount_out) = coin * pc
-                // => amount_out = pc - coin * pc / (coin + amount_in)
-                // => amount_out = ((pc * coin + pc * amount_in) - coin * pc) / (coin + amount_in)
-                // => amount_out =  pc * amount_in / (coin + amount_in)
-                let denominator = total_coin_without_take_pnl.checked_add(amount_in).unwrap();
-                amount_out = total_pc_without_take_pnl
+                let denominator = total_coin_without_take_pnl.checked_add(amount_in).ok_or(AmmError::CalculationFailure)?;
+                total_pc_without_take_pnl
                     .checked_mul(amount_in)
-                    .unwrap()
+                    .ok_or(AmmError::CalculationFailure)?
                     .checked_div(denominator)
-                    .unwrap();
+                    .ok_or(AmmError::CalculationFailure)
             }
             SwapDirection::PC2Coin => {
-                // (x + delta_x) * (y + delta_y) = x * y
-                // (pc + amount_in) * (coin - amount_out) = coin * pc
-                // => amount_out = coin - coin * pc / (pc + amount_in)
-                // => amount_out = (coin * pc + coin * amount_in - coin * pc) / (pc + amount_in)
-                // => amount_out = coin * amount_in / (pc + amount_in)
-                let denominator = total_pc_without_take_pnl.checked_add(amount_in).unwrap();
-                amount_out = total_coin_without_take_pnl
+                let denominator = total_pc_without_take_pnl.checked_add(amount_in).ok_or(AmmError::CalculationFailure)?;
+                total_coin_without_take_pnl
                     .checked_mul(amount_in)
-                    .unwrap()
+                    .ok_or(AmmError::CalculationFailure)?
                     .checked_div(denominator)
-                    .unwrap();
+                    .ok_or(AmmError::CalculationFailure)
             }
         }
-        return amount_out;
     }
 
     pub fn swap_token_amount_base_out(
@@ -413,41 +394,25 @@ impl Calculator {
         total_pc_without_take_pnl: U128,
         total_coin_without_take_pnl: U128,
         swap_direction: SwapDirection,
-    ) -> U128 {
-        let amount_in;
+    ) -> Result<U128, AmmError> {
         match swap_direction {
             SwapDirection::Coin2PC => {
-                // (x + delta_x) * (y + delta_y) = x * y
-                // (coin + amount_in) * (pc - amount_out) = coin * pc
-                // => amount_in = coin * pc / (pc - amount_out) - coin
-                // => amount_in = (coin * pc - pc * coin + amount_out * coin) / (pc - amount_out)
-                // => amount_in = (amount_out * coin) / (pc - amount_out)
-                let denominator = total_pc_without_take_pnl.checked_sub(amount_out).unwrap();
-                amount_in = total_coin_without_take_pnl
+                let denominator = total_pc_without_take_pnl.checked_sub(amount_out).ok_or(AmmError::CalculationFailure)?;
+                total_coin_without_take_pnl
                     .checked_mul(amount_out)
-                    .unwrap()
+                    .ok_or(AmmError::CalculationFailure)?
                     .checked_ceil_div(denominator)
-                    .unwrap()
+                    .ok_or(AmmError::CalculationFailure)
             }
             SwapDirection::PC2Coin => {
-                // (x + delta_x) * (y + delta_y) = x * y
-                // (pc + amount_in) * (coin - amount_out) = coin * pc
-                // => amount_out = coin - coin * pc / (pc + amount_in)
-                // => amount_out = (coin * pc + coin * amount_in - coin * pc) / (pc + amount_in)
-                // => amount_out = coin * amount_in / (pc + amount_in)
-
-                // => amount_in = coin * pc / (coin - amount_out) - pc
-                // => amount_in = (coin * pc - pc * coin + pc * amount_out) / (coin - amount_out)
-                // => amount_in = (pc * amount_out) / (coin - amount_out)
-                let denominator = total_coin_without_take_pnl.checked_sub(amount_out).unwrap();
-                amount_in = total_pc_without_take_pnl
+                let denominator = total_coin_without_take_pnl.checked_sub(amount_out).ok_or(AmmError::CalculationFailure)?;
+                total_pc_without_take_pnl
                     .checked_mul(amount_out)
-                    .unwrap()
+                    .ok_or(AmmError::CalculationFailure)?
                     .checked_ceil_div(denominator)
-                    .unwrap()
+                    .ok_or(AmmError::CalculationFailure)
             }
         }
-        return amount_in;
     }
 }
 
@@ -466,21 +431,16 @@ impl InvariantToken {
         token_coin: u64,
         round_direction: RoundDirection,
     ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
+        let result_u128 = if round_direction == RoundDirection::Floor {
             U128::from(token_coin)
-                .checked_mul(self.token_pc.into())
-                .unwrap()
-                .checked_div(self.token_coin.into())
-                .unwrap()
-                .as_u64()
+                .checked_mul(self.token_pc.into())?
+                .checked_div(self.token_coin.into())?
         } else {
             U128::from(token_coin)
-                .checked_mul(self.token_pc.into())
-                .unwrap()
-                .checked_ceil_div(self.token_coin.into())
-                .unwrap()
-                .as_u64()
-        })
+                .checked_mul(self.token_pc.into())?
+                .checked_ceil_div(self.token_coin.into())?
+        };
+        Some(result_u128.as_u64())
     }
 
     /// Exchange rate
@@ -489,21 +449,16 @@ impl InvariantToken {
         token_pc: u64,
         round_direction: RoundDirection,
     ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
+        let result_u128 = if round_direction == RoundDirection::Floor {
             U128::from(token_pc)
-                .checked_mul(self.token_coin.into())
-                .unwrap()
-                .checked_div(self.token_pc.into())
-                .unwrap()
-                .as_u64()
+                .checked_mul(self.token_coin.into())?
+                .checked_div(self.token_pc.into())?
         } else {
             U128::from(token_pc)
-                .checked_mul(self.token_coin.into())
-                .unwrap()
-                .checked_ceil_div(self.token_pc.into())
-                .unwrap()
-                .as_u64()
-        })
+                .checked_mul(self.token_coin.into())?
+                .checked_ceil_div(self.token_pc.into())?
+        };
+        Some(result_u128.as_u64())
     }
 }
 
@@ -521,21 +476,16 @@ impl InvariantPool {
         token_total_amount: u64,
         round_direction: RoundDirection,
     ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
+        let result_u128 = if round_direction == RoundDirection::Floor {
             U128::from(token_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
+                .checked_mul(self.token_input.into())?
+                .checked_div(self.token_total.into())?
         } else {
             U128::from(token_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_ceil_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
-        })
+                .checked_mul(self.token_input.into())?
+                .checked_ceil_div(self.token_total.into())?
+        };
+        Some(result_u128.as_u64())
     }
     /// Exchange rate
     pub fn exchange_token_to_pool(
@@ -543,21 +493,16 @@ impl InvariantPool {
         pool_total_amount: u64,
         round_direction: RoundDirection,
     ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
+        let result_u128 = if round_direction == RoundDirection::Floor {
             U128::from(pool_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
+                .checked_mul(self.token_input.into())?
+                .checked_div(self.token_total.into())?
         } else {
             U128::from(pool_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_ceil_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
-        })
+                .checked_mul(self.token_input.into())?
+                .checked_ceil_div(self.token_total.into())?
+        };
+        Some(result_u128.as_u64())
     }
 }
 
@@ -568,22 +513,24 @@ pub trait CheckedCeilDiv: Sized {
 
 impl CheckedCeilDiv for u128 {
     fn checked_ceil_div(&self, rhs: Self) -> Option<Self> {
-        let mut quotient = self.checked_div(rhs)?;
+        let quotient = self.checked_div(rhs)?;
         let remainder = self.checked_rem(rhs)?;
         if remainder != 0 {
-            quotient = quotient.checked_add(1)?;
+            quotient.checked_add(1)
+        } else {
+            Some(quotient)
         }
-        Some(quotient)
     }
 }
 
 impl CheckedCeilDiv for U128 {
     fn checked_ceil_div(&self, rhs: Self) -> Option<Self> {
-        let mut quotient = self.checked_div(rhs)?;
+        let quotient = self.checked_div(rhs)?;
         let remainder = self.checked_rem(rhs)?;
         if remainder != U128::zero() {
-            quotient = quotient.checked_add(U128::one())?;
+            quotient.checked_add(U128::one())
+        } else {
+            Some(quotient)
         }
-        Some(quotient)
     }
 }
