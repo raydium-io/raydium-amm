@@ -12,6 +12,10 @@ use crate::{
         Calculator, CheckedCeilDiv, InvariantPool, InvariantToken, RoundDirection, SwapDirection,
         U128, U256,
     },
+    p_helper::{
+        self, p_acessor_balance, p_cmp_mint, p_load_mut_unchecked, p_transfer_from_pool,
+        p_transfer_from_user,
+    },
     state::{
         AmmConfig, AmmInfo, AmmParams, AmmResetFlag, AmmState, AmmStatus, GetPoolData,
         GetSwapBaseInData, GetSwapBaseOutData, Loadable, RunCrankData, SimulateParams,
@@ -19,6 +23,15 @@ use crate::{
     },
 };
 
+use super::log::*;
+use arrayref::{array_ref, array_refs};
+use arrform::{arrform, ArrForm};
+use pinocchio::{
+    program_error::ProgramError as PinocchioProgramError,
+    pubkey::{create_program_address, pubkey_eq},
+    syscalls::sol_log_,
+};
+use pinocchio_token::state::TokenAccount;
 use serum_dex::{
     critbit::{LeafNode, Slab, SlabView},
     matching::{OrderType, Side},
@@ -28,6 +41,7 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
     entrypoint::ProgramResult,
+    log::sol_log,
     msg,
     program::{invoke, invoke_signed},
     // log::sol_log_compute_units,
@@ -39,10 +53,6 @@ use solana_program::{
     system_instruction,
     sysvar::{clock, Sysvar},
 };
-
-use super::log::*;
-use arrayref::{array_ref, array_refs};
-use arrform::{arrform, ArrForm};
 use std::{
     cell::{Ref, RefMut},
     collections::VecDeque,
@@ -3028,7 +3038,245 @@ impl Processor {
 
         Ok(())
     }
+    pub fn p_process_swap_base_in_v2(
+        program_id: &pinocchio::pubkey::Pubkey,
+        accounts: &[pinocchio::account_info::AccountInfo],
+        swap: &SwapInstructionBaseIn,
+    ) -> ProgramResult {
+        let [token_program_info, amm_info, amm_authority_info, amm_coin_vault_info, amm_pc_vault_info, user_source_info, user_destination_info, user_source_owner] =
+            accounts
+        else {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        };
+        let amm: &mut AmmInfo = p_load_mut_unchecked(amm_info).unwrap();
+        //enableing orderbook can not be permitted in swap_base_in_v2
+        if AmmStatus::from_u64(amm.status).orderbook_permission() {
+            sol_log("swap_base_in_v2: orderbook_enabled, please use swap_base_in instruction");
+            return Err(AmmError::InvalidStatus.into());
+        };
+        //user source owner should be signer
+        if !user_source_owner.is_signer() {
+            return Err(AmmError::InvalidSignAccount.into());
+        }
+        //check token program
+        if !pubkey_eq(token_program_info.key(), &pinocchio_token::id()) {
+            return Err(AmmError::InvalidSplTokenProgram.into());
+        }
 
+        if !pubkey_eq(
+            amm_authority_info.key(),
+            &pinocchio::pubkey::create_program_address(
+                &[AUTHORITY_AMM, &[amm.nonce as u8]],
+                program_id,
+            )
+            .unwrap(),
+        ) {
+            return Err(AmmError::InvalidProgramAddress.into());
+        }
+        //validate coin vault
+        if !pubkey_eq(amm_coin_vault_info.key(), &amm.coin_vault.to_bytes()) {
+            return Err(AmmError::InvalidCoinVault.into());
+        }
+        //validate pc vault
+        if !pubkey_eq(amm_pc_vault_info.key(), &amm.pc_vault.to_bytes()) {
+            return Err(AmmError::InvalidPCVault.into());
+        }
+
+        //trader's base/quote ata should not be same as amm's coin/pc vault
+        if pubkey_eq(user_source_info.key(), &amm.coin_vault.to_bytes())
+            || pubkey_eq(user_source_info.key(), &amm.pc_vault.to_bytes())
+            || pubkey_eq(user_destination_info.key(), &amm.coin_vault.to_bytes())
+            || pubkey_eq(user_destination_info.key(), &amm.pc_vault.to_bytes())
+        {
+            return Err(AmmError::InvalidUserToken.into());
+        }
+
+        //use sol_log directly
+        let unix_timestamp = Clock::get().unwrap().unix_timestamp;
+        if !AmmStatus::from_u64(amm.status).swap_permission() {
+            sol_log(&format!("swap_base_in_v2: status {}", identity(amm.status)));
+
+            if amm.status == 5//market status ->orderbook only 
+            && (unix_timestamp as u64) >= amm.state_data.orderbook_to_init_time
+            {
+                amm.status = 1; //mark as initalized
+                sol_log("swap_base_in_v2: OrderBook to Initialized");
+            } else {
+                return Err(AmmError::InvalidStatus.into());
+            }
+        } else if amm.status == 7 {
+            //market status waiting trade
+            if (unix_timestamp as u64) < amm.state_data.pool_open_time {
+                return Err(AmmError::InvalidStatus.into());
+            } else {
+                amm.status = 6; //mark as swap only
+                sol_log("swap_base_in_v2: WaitingTrade to SwapOnly");
+            }
+        }
+        let user_source_balance =
+            unsafe { core::ptr::read_unaligned(user_source_info.data_ptr().add(64) as *const u64) };
+        // Compute total
+        let (total_pc_without_take_pnl, total_coin_without_take_pnl) =
+            match Calculator::calc_total_without_take_pnl_no_orderbook(
+                p_acessor_balance(amm_pc_vault_info),
+                p_acessor_balance(amm_coin_vault_info),
+                &amm,
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(e.into());
+                }
+            };
+        let swap_direction;
+
+        if p_cmp_mint(user_source_info, amm_coin_vault_info)
+            && p_cmp_mint(user_destination_info, amm_pc_vault_info)
+        {
+            swap_direction = SwapDirection::Coin2PC
+        } else if p_cmp_mint(user_source_info, amm_pc_vault_info)
+            && p_cmp_mint(user_destination_info, amm_coin_vault_info)
+        {
+            swap_direction = SwapDirection::PC2Coin
+        } else {
+            return Err(AmmError::InvalidUserToken.into());
+        }
+        if user_source_balance < swap.amount_in {
+            encode_ray_log(SwapBaseInLog {
+                log_type: LogType::SwapBaseIn.into_u8(),
+                amount_in: swap.amount_in,
+                minimum_out: swap.minimum_amount_out,
+                direction: swap_direction as u64,
+                user_source: user_source_balance,
+                pool_coin: total_coin_without_take_pnl,
+                pool_pc: total_pc_without_take_pnl,
+                out_amount: 0,
+            });
+            return Err(AmmError::InsufficientFunds.into());
+        }
+        let swap_fee = U128::from(swap.amount_in)
+            .checked_mul(amm.fees.swap_fee_numerator.into())
+            .unwrap()
+            .checked_ceil_div(amm.fees.swap_fee_denominator.into())
+            .unwrap();
+        let swap_amount_out = Calculator::swap_token_amount_base_in(
+            U128::from(swap.amount_in).checked_sub(swap_fee).unwrap(),
+            total_pc_without_take_pnl.into(),
+            total_coin_without_take_pnl.into(),
+            swap_direction,
+        )
+        .as_u64();
+        encode_ray_log(SwapBaseInLog {
+            log_type: LogType::SwapBaseIn.into_u8(),
+            amount_in: swap.amount_in,
+            minimum_out: swap.minimum_amount_out,
+            direction: swap_direction as u64,
+            user_source: user_source_balance,
+            pool_coin: total_coin_without_take_pnl,
+            pool_pc: total_pc_without_take_pnl,
+            out_amount: swap_amount_out,
+        });
+        if swap_amount_out < swap.minimum_amount_out {
+            return Err(AmmError::ExceededSlippage.into());
+        }
+        if swap_amount_out == 0 || swap.amount_in == 0 {
+            return Err(AmmError::InvalidStatus.into());
+        }
+
+        match swap_direction {
+            SwapDirection::Coin2PC => {
+                if swap_amount_out >= total_pc_without_take_pnl {
+                    return Err(AmmError::InsufficientFunds.into());
+                }
+                // user_source->coin_vault
+
+                p_transfer_from_user(
+                    user_source_owner,
+                    user_source_info,
+                    amm_coin_vault_info,
+                    token_program_info,
+                    swap.amount_in,
+                )
+                .map_err(|err| ProgramError::from(u64::from(err)))?;
+
+                //pc_vault->user_destination
+                p_transfer_from_pool(
+                    amm_authority_info,
+                    amm_pc_vault_info,
+                    user_destination_info,
+                    token_program_info,
+                    AUTHORITY_AMM,
+                    amm.nonce as u8,
+                    swap_amount_out,
+                )
+                .map_err(|err| ProgramError::from(u64::from(err)))?;
+
+                // update state_data data
+                amm.state_data.swap_coin_in_amount = amm
+                    .state_data
+                    .swap_coin_in_amount
+                    .checked_add(swap.amount_in.into())
+                    .unwrap();
+                amm.state_data.swap_pc_out_amount = amm
+                    .state_data
+                    .swap_pc_out_amount
+                    .checked_add(swap_amount_out.into())
+                    .unwrap();
+                // charge coin as swap fee
+                amm.state_data.swap_acc_coin_fee = amm
+                    .state_data
+                    .swap_acc_coin_fee
+                    .checked_add(swap_fee.as_u64())
+                    .unwrap();
+            }
+            SwapDirection::PC2Coin => {
+                if swap_amount_out >= total_coin_without_take_pnl {
+                    return Err(AmmError::InsufficientFunds.into());
+                }
+                //user source->pc_vault
+                p_transfer_from_user(
+                    user_source_owner,
+                    user_source_info,
+                    amm_pc_vault_info,
+                    token_program_info,
+                    swap.amount_in,
+                )
+                .map_err(|err| ProgramError::from(u64::from(err)))?;
+                //coin_vault->user_dest
+
+                p_transfer_from_pool(
+                    amm_authority_info,
+                    amm_coin_vault_info,
+                    user_destination_info,
+                    token_program_info,
+                    AUTHORITY_AMM,
+                    amm.nonce as u8,
+                    swap_amount_out,
+                )
+                .map_err(|err| ProgramError::from(u64::from(err)))?;
+                // update state_data data
+                amm.state_data.swap_pc_in_amount = amm
+                    .state_data
+                    .swap_pc_in_amount
+                    .checked_add(swap.amount_in.into())
+                    .unwrap();
+                amm.state_data.swap_coin_out_amount = amm
+                    .state_data
+                    .swap_coin_out_amount
+                    .checked_add(swap_amount_out.into())
+                    .unwrap();
+                // charge pc as swap fee
+                amm.state_data.swap_acc_pc_fee = amm
+                    .state_data
+                    .swap_acc_pc_fee
+                    .checked_add(swap_fee.as_u64())
+                    .unwrap();
+            }
+        };
+
+        amm.recent_epoch = Clock::get()?.epoch;
+
+        Ok(())
+    }
     pub fn process_swap_base_in_v2(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
