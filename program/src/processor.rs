@@ -5435,7 +5435,7 @@ impl Processor {
                     &amm.market_program,
                 )?;
                 let pc_vault = Self::unpack_token_account(&amm_pc_vault_info, &spl_token::id())?;
-                let coin_vault = Self::unpack_token_account(&amm_pc_vault_info, &spl_token::id())?;
+                let coin_vault = Self::unpack_token_account(&amm_coin_vault_info, &spl_token::id())?;
                 pc_avaliable = pc_vault
                     .amount
                     .checked_add(open_orders.native_pc_free)
