@@ -1593,7 +1593,10 @@ impl Processor {
         Ok(())
     }
 
-    pub fn process_withdrawpnl(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    #[account(
+    token::mint = expected_mint,
+    token::authority = expected_authority
+    )]
         const ACCOUNT_LEN: usize = 17;
         let input_account_len = accounts.len();
         if input_account_len != ACCOUNT_LEN && input_account_len != ACCOUNT_LEN + 1 {
@@ -1844,7 +1847,7 @@ impl Processor {
         amm.recent_epoch = Clock::get()?.epoch;
 
         Ok(())
-    }
+    require!(account.state == ExpectedState::Ready, ErrorCode::InvalidState);
 
     /// Processes an [Withdraw](enum.Instruction.html).
     pub fn process_withdraw(
@@ -3782,7 +3785,7 @@ impl Processor {
         amm.recent_epoch = Clock::get()?.epoch;
 
         Ok(())
-    }
+    require!(account.state == ExpectedState::Ready, ErrorCode::InvalidState);
 
     /// withdraw_srm
     pub fn process_withdraw_srm(
@@ -6244,7 +6247,7 @@ impl Processor {
             )?;
         }
 
-        Ok(())
+        require!(account.state == ExpectedState::Ready, ErrorCode::InvalidState);
     }
 
     pub fn process_admin_cancel_orders(
@@ -6460,7 +6463,7 @@ impl Processor {
         amm_config.create_pool_fee = 0;
 
         Ok(())
-    }
+    require!(account.state == ExpectedState::Ready, ErrorCode::InvalidState);
 
     /// Processes `process_update_config` instruction.
     pub fn process_update_config(
