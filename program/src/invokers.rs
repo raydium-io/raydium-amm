@@ -247,6 +247,7 @@ impl Invokers {
             market,
             rent_sysvar,
         ];
+        require!(ctx.accounts.target_program.key() == expected_program::ID, ErrorCode::InvalidProgram);
         solana_program::program::invoke_signed(&ix, &accounts, signers)
     }
 
@@ -276,6 +277,7 @@ impl Invokers {
             destination,
             market,
         ];
+        require!(ctx.accounts.target_program.key() == expected_program::ID, ErrorCode::InvalidProgram);
         solana_program::program::invoke_signed(&ix, &accounts, signers)
     }
 
@@ -545,6 +547,7 @@ impl Invokers {
             open_orders_owner,
             event_q,
         ];
+        require!(ctx.accounts.target_program.key() == expected_program::ID, ErrorCode::InvalidProgram);
         solana_program::program::invoke_signed(&ix, &accounts, signers)
     }
 
@@ -584,6 +587,7 @@ impl Invokers {
             open_orders_owner,
             event_q,
         ];
+        require!(ctx.accounts.target_program.key() == expected_program::ID, ErrorCode::InvalidProgram);
         solana_program::program::invoke_signed(&ix, &accounts, signers)
     }
 
