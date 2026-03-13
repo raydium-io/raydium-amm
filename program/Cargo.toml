@@ -10,10 +10,10 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-no-entrypoint = ["serum_dex/no-entrypoint"]
-program = ["serum_dex/program", "serum_dex/no-entrypoint"]
+no-entrypoint = []
+program = []
 default = ["program"]
-client = ["serum_dex/client"]
+client = []
 devnet = []
 testnet = []
 
@@ -26,10 +26,6 @@ solana-program = "=2.1.0"
 spl-token = { version = "=7.0.0", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "6.0.0", features = [
     "no-entrypoint",
-] }
-serum_dex = { version = "0.5.10", git = "https://github.com/raydium-io/openbook-dex", features = [
-    "no-entrypoint",
-    "program",
 ] }
 solana-security-txt = "1.1.1"
 serde_json = { version = "1.0.56" }

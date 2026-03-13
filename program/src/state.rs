@@ -1,7 +1,6 @@
 //! State transition types
 
-use crate::{error::AmmError, math::Calculator};
-use serum_dex::state::ToAlignedBytes;
+use crate::error::AmmError;
 use solana_program::{
     account_info::AccountInfo,
     program_error::ProgramError,
@@ -15,7 +14,6 @@ use safe_transmute::{self, trivial::TriviallyTransmutable};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::{Ref, RefMut},
-    convert::identity,
     convert::TryInto,
     mem::size_of,
 };
@@ -83,7 +81,7 @@ unsafe impl TriviallyTransmutable for TargetOrder {}
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct TargetOrders {
-    pub owner: [u64; 4],
+    pub owner: Pubkey,
     pub buy_orders: [TargetOrder; 50],
     pub padding1: [u64; 8],
     pub target_x: u128,
@@ -120,7 +118,7 @@ impl Default for TargetOrders {
     #[inline]
     fn default() -> TargetOrders {
         TargetOrders {
-            owner: [0; 4],
+            owner: Pubkey::default(),
             buy_orders: [TargetOrder::default(); 50],
             padding1: [0; 8],
             target_x: 0,
@@ -153,10 +151,10 @@ impl TargetOrders {
     /// init
     #[inline]
     pub fn check_init(&mut self, x: u128, y: u128, owner: &Pubkey) -> Result<(), ProgramError> {
-        if identity(self.owner) != Pubkey::default().to_aligned_bytes() {
+        if self.owner != Pubkey::default() {
             return Err(AmmError::AlreadyInUse.into());
         }
-        self.owner = owner.to_aligned_bytes();
+        self.owner = *owner;
         self.last_order_numerator = 0; // 3
         self.last_order_denominator = 0; // 1
 
@@ -194,7 +192,7 @@ impl TargetOrders {
             return Err(AmmError::ExpectedAccount.into());
         }
         let data = Self::load_mut(account)?;
-        if identity(data.owner) != owner.to_aligned_bytes() {
+        if data.owner != *owner {
             return Err(AmmError::InvalidTargetOwner.into());
         }
         Ok(data)
@@ -214,7 +212,7 @@ impl TargetOrders {
             return Err(AmmError::ExpectedAccount.into());
         }
         let data = Self::load(account)?;
-        if identity(data.owner) != owner.to_aligned_bytes() {
+        if data.owner != *owner {
             return Err(AmmError::InvalidTargetOwner.into());
         }
         Ok(data)
@@ -756,8 +754,8 @@ impl AmmInfo {
         open_time: u64,
         coin_decimals: u8,
         pc_decimals: u8,
-        coin_lot_size: u64,
-        pc_lot_size: u64,
+        _coin_lot_size: u64,
+        _pc_lot_size: u64,
     ) -> Result<(), AmmError> {
         self.fees.initialize()?;
         self.state_data.initialize(open_time)?;
@@ -779,47 +777,9 @@ impl AmmInfo {
                 .checked_pow(coin_decimals.try_into().unwrap())
                 .unwrap();
         }
-        let temp_value_numerator = (coin_lot_size as u128)
-            .checked_mul(
-                (10 as u128)
-                    .checked_pow(pc_decimals.try_into().unwrap())
-                    .unwrap(),
-            )
-            .unwrap();
-        let temp_value_denominator = (pc_lot_size as u128)
-            .checked_mul(
-                (10 as u128)
-                    .checked_pow(coin_decimals.try_into().unwrap())
-                    .unwrap(),
-            )
-            .unwrap();
-        if (self.sys_decimal_value as u128)
-            <= temp_value_numerator
-                .checked_div(temp_value_denominator)
-                .unwrap()
-        {
-            self.sys_decimal_value = Calculator::to_u64(
-                temp_value_numerator
-                    .checked_div(temp_value_denominator)
-                    .unwrap(),
-            )
-            .unwrap();
-        }
-        let min_size = (coin_lot_size as u128)
-            .checked_mul(self.sys_decimal_value as u128)
-            .unwrap()
-            .checked_div(
-                (10u128)
-                    .checked_pow(coin_decimals.try_into().unwrap())
-                    .unwrap(),
-            )
-            .unwrap();
-        if min_size < u64::max_value().into() {
-            self.min_size = Calculator::to_u64(min_size)?;
-        } else {
-            // must check not zero in process_monitor_step
-            self.min_size = 0;
-        }
+
+        self.min_size = 0;
+
         self.vol_max_cut_ratio = 500; // TEN_THOUSAND as denominator
         self.amount_wave = self
             .sys_decimal_value
@@ -827,14 +787,8 @@ impl AmmInfo {
             .unwrap()
             .checked_div(1000)
             .unwrap();
-        self.coin_lot_size = coin_lot_size;
-        self.pc_lot_size = Calculator::convert_in_pc_lot_size(
-            pc_decimals,
-            coin_decimals,
-            pc_lot_size,
-            coin_lot_size,
-            self.sys_decimal_value,
-        );
+        self.coin_lot_size = 0;
+        self.pc_lot_size = 0;
         self.min_price_multiplier = 1;
         self.max_price_multiplier = 1000000000;
         self.client_order_id = 0;
@@ -1318,12 +1272,7 @@ mod test {
 
     #[test]
     fn test_target_info_layout() {
-        let owner: [u64; 4] = [
-            0x123456789abcedf0,
-            0x123456789abced0f,
-            0x123456789abce0df,
-            0x123456789abc0edf,
-        ];
+        let owner: Pubkey = Pubkey::new_unique();
         let mut buy_orders: [TargetOrder; 50] = [TargetOrder::default(); 50];
         let mut buy_orders_data = [0u8; 8 * 2 * 50];
         let mut offset = 0;
@@ -1386,10 +1335,10 @@ mod test {
         // serialize original data
         let mut target_orders_data = [0u8; 2208];
         let mut offset = 0;
-        for i in 0..4 {
-            target_orders_data[offset..offset + 8].copy_from_slice(&owner[i].to_le_bytes());
-            offset += 8;
-        }
+
+        target_orders_data[offset..offset + 32].copy_from_slice(&owner.to_bytes());
+        offset += 32;
+
         target_orders_data[offset..offset + 8 * 2 * 50].copy_from_slice(&buy_orders_data);
         offset += 8 * 2 * 50;
         for i in 0..8 {
@@ -1464,9 +1413,8 @@ mod test {
             bytemuck::from_bytes(&target_orders_data[0..core::mem::size_of::<TargetOrders>()]);
         // data check
         let unpack_owner = unpack_data.owner;
-        for i in 0..4 {
-            assert_eq!(owner[i], unpack_owner[i]);
-        }
+        assert_eq!(owner, unpack_owner);
+
         let unpack_buy_orders = unpack_data.buy_orders;
         for i in 0..50 {
             let price = buy_orders[i].price;
