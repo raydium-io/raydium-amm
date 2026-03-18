@@ -568,6 +568,8 @@ impl Processor {
         let rent_sysvar_info = next_account_info(account_info_iter)?;
         let amm_info = next_account_info(account_info_iter)?;
         let amm_authority_info = next_account_info(account_info_iter)?;
+        // Won't use.
+        // Can be any account.
         let _amm_open_orders_info = next_account_info(account_info_iter)?;
         let amm_lp_mint_info = next_account_info(account_info_iter)?;
         let amm_coin_mint_info = next_account_info(account_info_iter)?;
@@ -577,8 +579,11 @@ impl Processor {
         let amm_target_orders_info = next_account_info(account_info_iter)?;
         let amm_config_info = next_account_info(account_info_iter)?;
         let create_fee_destination_info = next_account_info(account_info_iter)?;
-
+        // Won't use.
+        // Can be any account.
         let _market_program_info = next_account_info(account_info_iter)?;
+        // Just a seed for AMM account.
+        // Can be any account.
         let market_info = next_account_info(account_info_iter)?;
 
         let user_wallet_info = next_account_info(account_info_iter)?;
@@ -1476,6 +1481,7 @@ impl Processor {
             user_dest_pc_info,
             source_lp_owner_info,
         ) = if input_account_len == 11 {
+            // Recommended use due to openbook has not supported.
             let account_info_iter = &mut accounts.iter();
             let token_program_info = next_account_info(account_info_iter)?;
 
