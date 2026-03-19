@@ -1405,7 +1405,7 @@ impl Processor {
         );
         msg!(arrform!(
             LOG_SIZE,
-            "withdrawpnl total_pc:{}, total_pc:{}, x:{}, y:{}",
+            "withdrawpnl total_pc:{}, total_coin:{}, x:{}, y:{}",
             total_pc_without_take_pnl,
             total_coin_without_take_pnl,
             x1,
@@ -2971,7 +2971,7 @@ impl Processor {
             return Err(AmmError::InvalidSysProgramAddress.into());
         }
 
-        let (pda, bump_seed) = Pubkey::find_program_address(&[&&AMM_CONFIG_SEED], program_id);
+        let (pda, bump_seed) = Pubkey::find_program_address(&[&AMM_CONFIG_SEED], program_id);
         if pda != *amm_config_info.key {
             return Err(AmmError::InvalidConfigAccount.into());
         }

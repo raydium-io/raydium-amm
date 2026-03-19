@@ -323,7 +323,7 @@ impl AmmStatus {
 
 #[repr(u64)]
 pub enum AmmState {
-    InvlidState = 0u64,
+    InvalidState = 0u64,
     IdleState = 1u64,
     CancelAllOrdersState = 2u64,
     PlanOrdersState = 3u64,
@@ -334,7 +334,7 @@ pub enum AmmState {
 impl AmmState {
     pub fn from_u64(state: u64) -> Self {
         match state {
-            0u64 => AmmState::InvlidState,
+            0u64 => AmmState::InvalidState,
             1u64 => AmmState::IdleState,
             2u64 => AmmState::CancelAllOrdersState,
             3u64 => AmmState::PlanOrdersState,
@@ -347,7 +347,7 @@ impl AmmState {
 
     pub fn into_u64(&self) -> u64 {
         match self {
-            AmmState::InvlidState => 0u64,
+            AmmState::InvalidState => 0u64,
             AmmState::IdleState => 1u64,
             AmmState::CancelAllOrdersState => 2u64,
             AmmState::PlanOrdersState => 3u64,
@@ -384,7 +384,7 @@ pub enum AmmParams {
     InitOrderDepth = 13u64,
     SetSwitchTime = 14u64,
     ClearOpenTime = 15u64,
-    Seperate = 16u64,
+    Separate = 16u64,
     UpdateOpenOrder = 17u64,
 }
 impl AmmParams {
@@ -406,7 +406,7 @@ impl AmmParams {
             13u64 => AmmParams::InitOrderDepth,
             14u64 => AmmParams::SetSwitchTime,
             15u64 => AmmParams::ClearOpenTime,
-            16u64 => AmmParams::Seperate,
+            16u64 => AmmParams::Separate,
             17u64 => AmmParams::UpdateOpenOrder,
             _ => unreachable!(),
         }
@@ -430,7 +430,7 @@ impl AmmParams {
             AmmParams::InitOrderDepth => 13u64,
             AmmParams::SetSwitchTime => 14u64,
             AmmParams::ClearOpenTime => 15u64,
-            AmmParams::Seperate => 16u64,
+            AmmParams::Separate => 16u64,
             AmmParams::UpdateOpenOrder => 17u64,
         }
     }

@@ -122,7 +122,7 @@ pub struct AdminCancelOrdersInstruction {
     pub limit: u16,
 }
 
-/// Update config acccount params
+/// Update config account params
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ConfigArgs {
