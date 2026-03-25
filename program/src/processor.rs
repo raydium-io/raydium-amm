@@ -2871,7 +2871,7 @@ impl Processor {
                     set_valid = true;
                 }
             }
-            AmmParams::Seperate => {
+            AmmParams::Separate => {
                 let value = match setparams.value {
                     Some(a) => a,
                     None => return Err(AmmError::InvalidInput.into()),
