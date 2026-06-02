@@ -241,17 +241,6 @@ impl Processor {
                 .unwrap()
                 .as_u64();
             if pc_pnl_amount != 0 && coin_pnl_amount != 0 {
-                // step2: save total_pnl_pc & total_pnl_coin
-                amm.state_data.total_pnl_pc = amm
-                    .state_data
-                    .total_pnl_pc
-                    .checked_add(diff_pc_pnl_amount.as_u64())
-                    .unwrap();
-                amm.state_data.total_pnl_coin = amm
-                    .state_data
-                    .total_pnl_coin
-                    .checked_add(diff_coin_pnl_amount.as_u64())
-                    .unwrap();
                 amm.state_data.need_take_pnl_pc = amm
                     .state_data
                     .need_take_pnl_pc
@@ -1950,21 +1939,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap_amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_coin_in_amount = amm
-                    .state_data
-                    .swap_coin_in_amount
-                    .wrapping_add(swap.amount_in.into());
-                amm.state_data.swap_pc_out_amount = amm
-                    .state_data
-                    .swap_pc_out_amount
-                    .wrapping_add(swap_amount_out.into());
-                // charge coin as swap fee
-                amm.state_data.swap_acc_coin_fee = amm
-                    .state_data
-                    .swap_acc_coin_fee
-                    .checked_add(swap_fee.as_u64())
-                    .unwrap();
             }
             SwapDirection::PC2Coin => {
                 if swap_amount_out >= total_coin_without_take_pnl {
@@ -1988,21 +1962,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap_amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_pc_in_amount = amm
-                    .state_data
-                    .swap_pc_in_amount
-                    .wrapping_add(swap.amount_in.into());
-                amm.state_data.swap_coin_out_amount = amm
-                    .state_data
-                    .swap_coin_out_amount
-                    .wrapping_add(swap_amount_out.into());
-                // charge pc as swap fee
-                amm.state_data.swap_acc_pc_fee = amm
-                    .state_data
-                    .swap_acc_pc_fee
-                    .checked_add(swap_fee.as_u64())
-                    .unwrap();
             }
         };
         amm.recent_epoch = Clock::get()?.epoch;
@@ -2203,21 +2162,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap.amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_coin_in_amount = amm
-                    .state_data
-                    .swap_coin_in_amount
-                    .wrapping_add(swap_in_after_add_fee.into());
-                amm.state_data.swap_pc_out_amount = amm
-                    .state_data
-                    .swap_pc_out_amount
-                    .wrapping_add(Calculator::to_u128(swap.amount_out)?);
-                // charge coin as swap fee
-                amm.state_data.swap_acc_coin_fee = amm
-                    .state_data
-                    .swap_acc_coin_fee
-                    .checked_add(swap_fee)
-                    .unwrap();
             }
             SwapDirection::PC2Coin => {
                 if swap.amount_out >= total_coin_without_take_pnl {
@@ -2242,21 +2186,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap.amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_pc_in_amount = amm
-                    .state_data
-                    .swap_pc_in_amount
-                    .wrapping_add(swap_in_after_add_fee.into());
-                amm.state_data.swap_coin_out_amount = amm
-                    .state_data
-                    .swap_coin_out_amount
-                    .wrapping_add(swap.amount_out.into());
-                // charge pc as swap fee
-                amm.state_data.swap_acc_pc_fee = amm
-                    .state_data
-                    .swap_acc_pc_fee
-                    .checked_add(swap_fee)
-                    .unwrap();
             }
         };
         amm.recent_epoch = Clock::get()?.epoch;
@@ -2431,21 +2360,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap_amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_coin_in_amount = amm
-                    .state_data
-                    .swap_coin_in_amount
-                    .wrapping_add(swap.amount_in.into());
-                amm.state_data.swap_pc_out_amount = amm
-                    .state_data
-                    .swap_pc_out_amount
-                    .wrapping_add(swap_amount_out.into());
-                // charge coin as swap fee
-                amm.state_data.swap_acc_coin_fee = amm
-                    .state_data
-                    .swap_acc_coin_fee
-                    .checked_add(swap_fee.as_u64())
-                    .unwrap();
             }
             SwapDirection::PC2Coin => {
                 if swap_amount_out >= total_coin_without_take_pnl {
@@ -2469,21 +2383,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap_amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_pc_in_amount = amm
-                    .state_data
-                    .swap_pc_in_amount
-                    .wrapping_add(swap.amount_in.into());
-                amm.state_data.swap_coin_out_amount = amm
-                    .state_data
-                    .swap_coin_out_amount
-                    .wrapping_add(swap_amount_out.into());
-                // charge pc as swap fee
-                amm.state_data.swap_acc_pc_fee = amm
-                    .state_data
-                    .swap_acc_pc_fee
-                    .checked_add(swap_fee.as_u64())
-                    .unwrap();
             }
         };
         amm.recent_epoch = Clock::get()?.epoch;
@@ -2665,21 +2564,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap.amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_coin_in_amount = amm
-                    .state_data
-                    .swap_coin_in_amount
-                    .wrapping_add(swap_in_after_add_fee.into());
-                amm.state_data.swap_pc_out_amount = amm
-                    .state_data
-                    .swap_pc_out_amount
-                    .wrapping_add(Calculator::to_u128(swap.amount_out)?);
-                // charge coin as swap fee
-                amm.state_data.swap_acc_coin_fee = amm
-                    .state_data
-                    .swap_acc_coin_fee
-                    .checked_add(swap_fee)
-                    .unwrap();
             }
             SwapDirection::PC2Coin => {
                 if swap.amount_out >= total_coin_without_take_pnl {
@@ -2703,21 +2587,6 @@ impl Processor {
                     amm.nonce as u8,
                     swap.amount_out,
                 )?;
-                // update state_data data
-                amm.state_data.swap_pc_in_amount = amm
-                    .state_data
-                    .swap_pc_in_amount
-                    .wrapping_add(swap_in_after_add_fee.into());
-                amm.state_data.swap_coin_out_amount = amm
-                    .state_data
-                    .swap_coin_out_amount
-                    .wrapping_add(swap.amount_out.into());
-                // charge pc as swap fee
-                amm.state_data.swap_acc_pc_fee = amm
-                    .state_data
-                    .swap_acc_pc_fee
-                    .checked_add(swap_fee)
-                    .unwrap();
             }
         };
         amm.recent_epoch = Clock::get()?.epoch;
