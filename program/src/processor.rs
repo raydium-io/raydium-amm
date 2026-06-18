@@ -1618,6 +1618,9 @@ impl Processor {
         let lp_mint = Self::unpack_mint(&amm_lp_mint_info, spl_token_program_id)?;
         let user_source_lp =
             Self::unpack_token_account(&user_source_lp_info, spl_token_program_id)?;
+        if user_source_lp.owner != *source_lp_owner_info.key {
+            return Err(AmmError::InvalidOwner.into());
+        }
         if user_source_lp.mint != *amm_lp_mint_info.key {
             return Err(AmmError::InvalidTokenLP.into());
         }
