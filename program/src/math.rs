@@ -1,4 +1,5 @@
-//! Defines PreciseNumber, a U256 wrapper with float-like operations
+//! Defines the Calculator struct, providing safety-critical arithmetic operations
+//! for the Automated Market Maker (AMM) logic on Solana.
 #![allow(clippy::assign_op_pattern)]
 #![allow(clippy::ptr_offset_with_cast)]
 #![allow(clippy::unknown_clippy_lints)]
@@ -10,7 +11,7 @@ use serum_dex::{
     state::{EventView, MarketState, OpenOrders, ToAlignedBytes},
 };
 use solana_program::{account_info::AccountInfo, log::sol_log_compute_units, msg};
-use std::{cmp::Eq, convert::identity, convert::TryInto};
+use std::{cmp::Eq, convert::TryInto};
 use uint::construct_uint;
 
 construct_uint! {
@@ -29,7 +30,7 @@ pub enum SwapDirection {
     Coin2PC = 2u64,
 }
 
-/// The direction to round.  Used for pool token to trading token conversions to
+/// The direction to round. Used for pool token to trading token conversions to
 /// avoid losing value on any deposit or withdrawal.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -52,211 +53,209 @@ impl Calculator {
         val.try_into().map_err(|_| AmmError::ConversionFailure)
     }
 
-    pub fn calc_x_power(last_x: U256, last_y: U256, current_x: U256, current_y: U256) -> U256 {
-        // must be use u256, because u128 may be overflow
-        let x_power = last_x
-            .checked_mul(last_y)
-            .unwrap()
-            .checked_mul(current_x)
-            .unwrap()
-            .checked_div(current_y)
-            .unwrap();
-        x_power
+    /// Calculates the constant product invariant component: x * y * current_x / current_y.
+    /// CRITICAL: Replaced unwraps with safe error handling.
+    pub fn calc_x_power(last_x: U256, last_y: U256, current_x: U256, current_y: U256) -> Result<U256, AmmError> {
+        let xy = last_x.checked_mul(last_y).ok_or(AmmError::CheckedMulOverflow)?;
+        let xy_cx = xy.checked_mul(current_x).ok_or(AmmError::CheckedMulOverflow)?;
+        let x_power = xy_cx.checked_div(current_y).ok_or(AmmError::CheckedDivByZero)?;
+        Ok(x_power)
     }
 
-    // out: 0, 1, 2, 3, 5, 8, 13, 21, 34, 55
+    /// Generates the standard Fibonacci sequence: 0, 1, 1, 2, 3, 5, 8, ...
     pub fn fibonacci(order_num: u64) -> Vec<u64> {
-        let mut fb = Vec::new();
+        let mut fb = Vec::with_capacity(order_num as usize);
+        
         for i in 0..order_num {
             if i == 0 {
                 fb.push(0u64);
             } else if i == 1 {
                 fb.push(1u64);
-            } else if i == 2 {
-                fb.push(2u64);
             } else {
-                let ret = fb[(i - 1u64) as usize] + fb[(i - 2u64) as usize];
+                // F(n) = F(n-1) + F(n-2)
+                let ret = fb[(i - 1u64) as usize].checked_add(fb[(i - 2u64) as usize]).unwrap_or_else(|| u64::MAX);
                 fb.push(ret);
             };
         }
-        return fb;
+        fb
     }
 
-    pub fn normalize_decimal(val: u64, native_decimal: u64, sys_decimal_value: u64) -> u64 {
-        // e.g., amm.sys_decimal_value is 10**6, native_decimal is 10**9, price is 1.23, this function will convert (1.23*10**9) -> (1.23*10**6)
-        //let ret:u64 = val.checked_mul(amm.sys_decimal_value).unwrap().checked_div((10 as u64).pow(native_decimal.into())).unwrap();
+    /// Converts a u64 amount from native decimals to system decimals (returns U128).
+    /// CRITICAL: Replaced unwraps with safe error handling.
+    pub fn normalize_decimal(val: u64, native_decimal: u64, sys_decimal_value: u64) -> Result<U128, AmmError> {
+        // e.g., (1.23 * 10^9) -> (1.23 * 10^6)
+        let native_pow = U128::from(10).checked_pow(native_decimal.into()).ok_or(AmmError::CheckedPowOverflow)?;
+
         let ret_mut = (U128::from(val))
             .checked_mul(sys_decimal_value.into())
-            .unwrap();
-        let ret = Self::to_u64(
-            ret_mut
-                .checked_div(U128::from(10).checked_pow(native_decimal.into()).unwrap())
-                .unwrap()
-                .as_u128(),
-        )
-        .unwrap();
-        ret
-    }
+            .ok_or(AmmError::CheckedMulOverflow)?;
 
-    pub fn restore_decimal(val: U128, native_decimal: u64, sys_decimal_value: u64) -> U128 {
-        // e.g., amm.sys_decimal_value is 10**6, native_decimal is 10**9, price is 1.23, this function will convert (1.23*10**6) -> (1.23*10**9)
-        // let ret:u64 = val.checked_mul((10 as u64).pow(native_decimal.into())).unwrap().checked_div(amm.sys_decimal_value).unwrap();
-        let ret_mut = val
-            .checked_mul(U128::from(10).checked_pow(native_decimal.into()).unwrap())
-            .unwrap();
-        let ret = ret_mut.checked_div(sys_decimal_value.into()).unwrap();
-        ret
-    }
-
-    pub fn normalize_decimal_v2(val: u64, native_decimal: u64, sys_decimal_value: u64) -> U128 {
-        // e.g., amm.sys_decimal_value is 10**6, native_decimal is 10**9, price is 1.23, this function will convert (1.23*10**9) -> (1.23*10**6)
-        //let ret:u64 = val.checked_mul(amm.sys_decimal_value).unwrap().checked_div((10 as u64).pow(native_decimal.into())).unwrap();
-        let ret_mut = (U128::from(val))
-            .checked_mul(sys_decimal_value.into())
-            .unwrap();
         let ret = ret_mut
-            .checked_div(U128::from(10).checked_pow(native_decimal.into()).unwrap())
-            .unwrap();
-        ret
+            .checked_div(native_pow)
+            .ok_or(AmmError::CheckedDivByZero)?;
+        
+        Ok(ret)
     }
 
-    pub fn floor_lot(val: u64, lot_size: u64) -> u64 {
+    /// Converts a U128 amount from system decimals back to native decimals.
+    /// CRITICAL: Replaced unwraps with safe error handling.
+    pub fn restore_decimal(val: U128, native_decimal: u64, sys_decimal_value: u64) -> Result<U128, AmmError> {
+        // e.g., (1.23 * 10^6) -> (1.23 * 10^9)
+        let native_pow = U128::from(10).checked_pow(native_decimal.into()).ok_or(AmmError::CheckedPowOverflow)?;
+
+        let ret_mut = val
+            .checked_mul(native_pow)
+            .ok_or(AmmError::CheckedMulOverflow)?;
+
+        let ret = ret_mut.checked_div(sys_decimal_value.into()).ok_or(AmmError::CheckedDivByZero)?;
+        
+        Ok(ret)
+    }
+
+    /// Helper to floor a value to the nearest lot size.
+    pub fn floor_lot(val: u64, lot_size: u64) -> Result<u64, AmmError> {
         // all numbers are in normalized decimal already
-        let unit: u64 = val.checked_div(lot_size).unwrap();
-        let ret: u64 = unit.checked_mul(lot_size).unwrap();
-        ret
+        if lot_size == 0 {
+            return Err(AmmError::CheckedDivByZero);
+        }
+        let unit: u64 = val.checked_div(lot_size).ok_or(AmmError::CheckedDivByZero)?;
+        let ret: u64 = unit.checked_mul(lot_size).ok_or(AmmError::CheckedMulOverflow)?;
+        Ok(ret)
     }
 
-    pub fn ceil_lot(val: u64, lot_size: u64) -> u64 {
-        let unit: u128 = (val as u128).checked_ceil_div(lot_size as u128).unwrap();
-        let ret: u64 = Self::to_u64(unit).unwrap().checked_mul(lot_size).unwrap();
-        ret
+    /// Helper to ceil a value to the nearest lot size.
+    /// CRITICAL: Replaced final unwraps with safe error handling.
+    pub fn ceil_lot(val: u64, lot_size: u64) -> Result<u64, AmmError> {
+        let unit: u128 = (val as u128).checked_ceil_div(lot_size as u128).ok_or(AmmError::CheckedDivByZero)?;
+        let ret: u64 = Self::to_u64(unit.checked_mul(lot_size as u128).ok_or(AmmError::CheckedMulOverflow)?).map_err(|_| AmmError::ConversionFailure)?;
+        Ok(ret)
     }
 
     /*
-        o_pls = pls * (cls * pc_dec) / (dec * c_dec) => convert_out_pc_lot_sz
-        pls = dec * o_pls * c_dec / (cls * pc_dec)  => convert_in_pc_lot_sz
-
-        c_sz = o_c_sz * cls * dec / c_dec => convert_in_vol
-        o_c_sz = c_sz * c_dec / (cls * dec) => convert_out_vol
-
-        p = o_p * pls => convert_in_price
-        o_p = p / pls => convert_out_price
+        Lot Size Conversion Logic (SRM <-> Internal)
     */
 
-    // convert internal pc_lot_size -> srm pc_lot_size
+    /// Convert internal pc_lot_size -> srm pc_lot_size
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn convert_out_pc_lot_size(
         pc_decimals: u8,
         coin_decimals: u8,
         pc_lot_size: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
-        let native_lot_size = Self::to_u64(
-            ((U128::from(pc_lot_size)
-                * U128::from(coin_lot_size)
-                * (U128::from(10).checked_pow(pc_decimals.into()).unwrap()))
-                / (U128::from(sys_decimal_value)
-                    * (U128::from(10).checked_pow(coin_decimals.into()).unwrap())))
-            .as_u128(),
-        )
-        .unwrap();
-        native_lot_size
+    ) -> Result<u64, AmmError> {
+        let pc_pow = U128::from(10).checked_pow(pc_decimals.into()).ok_or(AmmError::CheckedPowOverflow)?;
+        let coin_pow = U128::from(10).checked_pow(coin_decimals.into()).ok_or(AmmError::CheckedPowOverflow)?;
+
+        let numerator = U128::from(pc_lot_size)
+            .checked_mul(coin_lot_size.into()).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_mul(pc_pow).ok_or(AmmError::CheckedMulOverflow)?;
+
+        let denominator = U128::from(sys_decimal_value)
+            .checked_mul(coin_pow).ok_or(AmmError::CheckedMulOverflow)?;
+        
+        let native_lot_size_u128 = numerator.checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?;
+
+        Self::to_u64(native_lot_size_u128.as_u128())
     }
 
-    // convert srm pc_lot_size -> internal pc_lot_size
+    /// Convert srm pc_lot_size -> internal pc_lot_size
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn convert_in_pc_lot_size(
         pc_decimals: u8,
         coin_decimals: u8,
         pc_lot_size: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
-        let native_lot_size = Self::to_u64(
-            (U128::from(pc_lot_size)
-                .checked_mul(sys_decimal_value.into())
-                .unwrap()
-                .checked_mul(U128::from(10).checked_pow(coin_decimals.into()).unwrap())
-                .unwrap())
-            .checked_div(
-                U128::from(coin_lot_size)
-                    .checked_mul(U128::from(10).checked_pow(pc_decimals.into()).unwrap())
-                    .unwrap(),
-            )
-            .unwrap()
-            .as_u128(),
-        )
-        .unwrap();
-        native_lot_size
+    ) -> Result<u64, AmmError> {
+        let pc_pow = U128::from(10).checked_pow(pc_decimals.into()).ok_or(AmmError::CheckedPowOverflow)?;
+        let coin_pow = U128::from(10).checked_pow(coin_decimals.into()).ok_or(AmmError::CheckedPowOverflow)?;
+
+        let numerator = U128::from(pc_lot_size)
+            .checked_mul(sys_decimal_value.into()).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_mul(coin_pow).ok_or(AmmError::CheckedMulOverflow)?;
+        
+        let denominator = U128::from(coin_lot_size)
+            .checked_mul(pc_pow).ok_or(AmmError::CheckedMulOverflow)?;
+
+        let native_lot_size_u128 = numerator.checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?;
+        
+        Self::to_u64(native_lot_size_u128.as_u128())
     }
 
-    // convert srm price -> internal price
-    pub fn convert_in_price(val: u64, pc_lot_size: u64) -> u64 {
-        let price = val.checked_mul(pc_lot_size).unwrap();
-        price
+    /// Convert srm price -> internal price
+    pub fn convert_in_price(val: u64, pc_lot_size: u64) -> Result<u64, AmmError> {
+        val.checked_mul(pc_lot_size).ok_or(AmmError::CheckedMulOverflow)
     }
 
-    // convert internal price -> srm price
-    pub fn convert_price_out(val: u64, pc_lot_size: u64) -> u64 {
-        let price = val.checked_div(pc_lot_size).unwrap();
-        price
+    /// Convert internal price -> srm price
+    pub fn convert_price_out(val: u64, pc_lot_size: u64) -> Result<u64, AmmError> {
+        val.checked_div(pc_lot_size).ok_or(AmmError::CheckedDivByZero)
     }
 
-    // convert srm coin size -> internal coin size
+    /// Convert srm coin size -> internal coin size
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn convert_in_vol(
         val: u64,
         coin_decimal: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
+    ) -> Result<u64, AmmError> {
+        let coin_pow = U128::from(10).checked_pow(coin_decimal.into()).ok_or(AmmError::CheckedPowOverflow)?;
+
         let volume: U128 = U128::from(val)
-            .checked_mul(coin_lot_size.into())
-            .unwrap()
-            .checked_mul(sys_decimal_value.into())
-            .unwrap()
-            .checked_div(U128::from(10).checked_pow(coin_decimal.into()).unwrap())
-            .unwrap();
-        let ret: u64 = Self::to_u64(volume.as_u128()).unwrap();
-        ret
+            .checked_mul(coin_lot_size.into()).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_mul(sys_decimal_value.into()).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_div(coin_pow).ok_or(AmmError::CheckedDivByZero)?;
+        
+        Self::to_u64(volume.as_u128())
     }
 
-    // convert internal coin size -> srm coin size
+    /// Convert internal coin size -> srm coin size
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn convert_vol_out(
         val: u64,
         coin_decimal: u64,
         coin_lot_size: u64,
         sys_decimal_value: u64,
-    ) -> u64 {
+    ) -> Result<u64, AmmError> {
+        let coin_pow = U128::from(10).checked_pow(coin_decimal.into()).ok_or(AmmError::CheckedPowOverflow)?;
+        let denom_mult = U128::from(coin_lot_size)
+            .checked_mul(sys_decimal_value.into()).ok_or(AmmError::CheckedMulOverflow)?;
+
         let volume: U128 = U128::from(val)
-            .checked_mul(U128::from(10).checked_pow(coin_decimal.into()).unwrap())
-            .unwrap()
-            .checked_div(
-                U128::from(coin_lot_size)
-                    .checked_mul(sys_decimal_value.into())
-                    .unwrap(),
-            )
-            .unwrap();
-        let ret: u64 = Self::to_u64(volume.as_u128()).unwrap();
-        ret
+            .checked_mul(coin_pow).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_div(denom_mult).ok_or(AmmError::CheckedDivByZero)?;
+            
+        Self::to_u64(volume.as_u128())
     }
 
+    /// Calculates the precise amount of PC and Coin tokens currently held in the Serum OpenOrders vault 
+    /// by scanning the EventQueue.
     pub fn calc_exact_vault_in_serum<'a>(
         open_orders: &'a OpenOrders,
         market_state: &'a Box<MarketState>,
         event_q_account: &'a AccountInfo,
         amm_open_account: &'a AccountInfo,
     ) -> Result<(u64, u64), AmmError> {
-        let event_q = market_state.load_event_queue_mut(event_q_account).unwrap();
+        // CRITICAL: .unwrap() on market_state load must be handled.
+        let event_q = market_state.load_event_queue_mut(event_q_account).map_err(|_| AmmError::LoadEventQueueFailure)?;
+        
         let mut native_pc_total = open_orders.native_pc_total;
         let mut native_coin_total = open_orders.native_coin_total;
+        
         msg!("calc_exact len:{}", event_q.len());
         sol_log_compute_units();
+        
         for event in event_q.iter() {
-            if identity(event.owner) != (*amm_open_account.key).to_aligned_bytes() {
+            // Check if the event belongs to this AMM's OpenOrders account
+            if event.owner.to_aligned_bytes() != (*amm_open_account.key).to_aligned_bytes() {
                 continue;
             }
-            // msg!("{:?}", event.as_view().unwrap());
-            match event.as_view().unwrap() {
+            
+            let event_view = event.as_view().ok_or(AmmError::EventViewFailure)?;
+
+            match event_view {
                 EventView::Fill {
                     side,
                     maker,
@@ -270,14 +269,17 @@ impl Calculator {
                     client_order_id: _,
                 } => {
                     match side {
+                        // Maker Bid: AMM is selling Coin (receiving PC)
                         Side::Bid if maker => {
-                            native_pc_total -= native_qty_paid;
-                            native_coin_total += native_qty_received;
+                            native_pc_total = native_pc_total.checked_sub(native_qty_paid).ok_or(AmmError::CheckedSubOverflow)?;
+                            native_coin_total = native_coin_total.checked_add(native_qty_received).ok_or(AmmError::CheckedAddOverflow)?;
                         }
+                        // Maker Ask: AMM is selling PC (receiving Coin)
                         Side::Ask if maker => {
-                            native_coin_total -= native_qty_paid;
-                            native_pc_total += native_qty_received;
+                            native_coin_total = native_coin_total.checked_sub(native_qty_paid).ok_or(AmmError::CheckedSubOverflow)?;
+                            native_pc_total = native_pc_total.checked_add(native_qty_received).ok_or(AmmError::CheckedAddOverflow)?;
                         }
+                        // Taker fills are handled by Serum
                         _ => (),
                     };
                 }
@@ -290,6 +292,7 @@ impl Calculator {
         Ok((native_pc_total, native_coin_total))
     }
 
+    /// Calculates the total PC and Coin balance without the unrealized Profit & Loss (PNL).
     pub fn calc_total_without_take_pnl<'a>(
         pc_amount: u64,
         coin_amount: u64,
@@ -311,14 +314,17 @@ impl Calculator {
             .ok_or(AmmError::CheckedAddOverflow)?
             .checked_sub(amm.state_data.need_take_pnl_pc)
             .ok_or(AmmError::CheckedSubOverflow)?;
+        
         let total_coin_without_take_pnl = coin_amount
             .checked_add(coin_total_in_serum)
             .ok_or(AmmError::CheckedAddOverflow)?
             .checked_sub(amm.state_data.need_take_pnl_coin)
             .ok_or(AmmError::CheckedSubOverflow)?;
+            
         Ok((total_pc_without_take_pnl, total_coin_without_take_pnl))
     }
 
+    /// Simplified PNL calculation when orderbook state (Serum) is not needed.
     pub fn calc_total_without_take_pnl_no_orderbook<'a>(
         pc_amount: u64,
         coin_amount: u64,
@@ -332,232 +338,205 @@ impl Calculator {
             .ok_or(AmmError::CheckedSubOverflow)?;
         Ok((total_pc_without_take_pnl, total_coin_without_take_pnl))
     }
+    
+    // --- AMM Price/Size Calculation Functions ---
 
-    pub fn get_max_buy_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> u64 {
-        // max_size = x / (1.0025 * price) - y
+    /// Gets the maximum possible buy size based on the invariant curve and price.
+    /// CRITICAL: Replaced unwraps with safe error handling.
+    pub fn get_max_buy_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> Result<u64, AmmError> {
+        let fee_numerator_u128 = U128::from(amm.fees.trade_fee_numerator);
+        let fee_denominator_u128 = U128::from(amm.fees.trade_fee_denominator);
+
         let price_with_fee = U128::from(price)
-            .checked_mul(U128::from(
-                amm.fees.trade_fee_denominator + amm.fees.trade_fee_numerator,
-            ))
-            .unwrap()
-            .checked_div(U128::from(amm.fees.trade_fee_denominator))
-            .unwrap();
+            .checked_mul(fee_denominator_u128.checked_add(fee_numerator_u128).ok_or(AmmError::CheckedAddOverflow)?).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_div(fee_denominator_u128).ok_or(AmmError::CheckedDivByZero)?;
+
         let mut max_size = U128::from(x)
-            .checked_mul(amm.sys_decimal_value.into())
-            .unwrap()
-            .checked_div(price_with_fee)
-            .unwrap();
+            .checked_mul(amm.sys_decimal_value.into()).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_div(price_with_fee).ok_or(AmmError::CheckedDivByZero)?;
+
+        // max_size = x / (price * (1 + fee)) - y
         max_size = max_size.saturating_sub(y.into());
-        Self::to_u64(max_size.as_u128()).unwrap()
+        Self::to_u64(max_size.as_u128())
     }
 
-    pub fn get_max_sell_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> u64 {
-        // let max_size = y - x / (p / 1.0025)
+    /// Gets the maximum possible sell size based on the invariant curve and price.
+    /// CRITICAL: Replaced unwraps with safe error handling.
+    pub fn get_max_sell_size_at_price(price: u64, x: u128, y: u128, amm: &AmmInfo) -> Result<u64, AmmError> {
+        let fee_numerator_u128 = U128::from(amm.fees.trade_fee_numerator);
+        let fee_denominator_u128 = U128::from(amm.fees.trade_fee_denominator);
+        
         let price_with_fee = U128::from(price)
-            .checked_mul(amm.fees.trade_fee_denominator.into())
-            .unwrap()
-            .checked_div(U128::from(
-                amm.fees.trade_fee_denominator + amm.fees.trade_fee_numerator,
-            ))
-            .unwrap();
-        let second_part = U128::from(x)
-            .checked_mul(amm.sys_decimal_value.into())
-            .unwrap()
-            .checked_div(price_with_fee.into())
-            .unwrap();
+            .checked_mul(fee_denominator_u128).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_div(fee_denominator_u128.checked_add(fee_numerator_u128).ok_or(AmmError::CheckedAddOverflow)?).ok_or(AmmError::CheckedDivByZero)?;
 
+        let second_part = U128::from(x)
+            .checked_mul(amm.sys_decimal_value.into()).ok_or(AmmError::CheckedMulOverflow)?
+            .checked_div(price_with_fee.into()).ok_or(AmmError::CheckedDivByZero)?;
+
+        // max_size = y - x / (price / (1 + fee))
         let max_size = U128::from(y).saturating_sub(second_part);
-        Self::to_u64(max_size.as_u128()).unwrap()
+        Self::to_u64(max_size.as_u128())
     }
 
+    // --- Constant Product Swap Functions ---
+
+    /// Calculates the output amount (amount_out) given the input amount (amount_in) 
+    /// using the constant product formula (x + dx)(y - dy) = k.
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn swap_token_amount_base_in(
         amount_in: U128,
         total_pc_without_take_pnl: U128,
         total_coin_without_take_pnl: U128,
         swap_direction: SwapDirection,
-    ) -> U128 {
+    ) -> Result<U128, AmmError> {
         let amount_out;
         match swap_direction {
             SwapDirection::Coin2PC => {
-                // (x + delta_x) * (y + delta_y) = x * y
                 // (coin + amount_in) * (pc - amount_out) = coin * pc
-                // => amount_out = pc - coin * pc / (coin + amount_in)
-                // => amount_out = ((pc * coin + pc * amount_in) - coin * pc) / (coin + amount_in)
-                // => amount_out =  pc * amount_in / (coin + amount_in)
-                let denominator = total_coin_without_take_pnl.checked_add(amount_in).unwrap();
+                // => amount_out = pc * amount_in / (coin + amount_in)
+                let denominator = total_coin_without_take_pnl.checked_add(amount_in).ok_or(AmmError::CheckedAddOverflow)?;
                 amount_out = total_pc_without_take_pnl
-                    .checked_mul(amount_in)
-                    .unwrap()
-                    .checked_div(denominator)
-                    .unwrap();
+                    .checked_mul(amount_in).ok_or(AmmError::CheckedMulOverflow)?
+                    .checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?;
             }
             SwapDirection::PC2Coin => {
-                // (x + delta_x) * (y + delta_y) = x * y
                 // (pc + amount_in) * (coin - amount_out) = coin * pc
-                // => amount_out = coin - coin * pc / (pc + amount_in)
-                // => amount_out = (coin * pc + coin * amount_in - coin * pc) / (pc + amount_in)
                 // => amount_out = coin * amount_in / (pc + amount_in)
-                let denominator = total_pc_without_take_pnl.checked_add(amount_in).unwrap();
+                let denominator = total_pc_without_take_pnl.checked_add(amount_in).ok_or(AmmError::CheckedAddOverflow)?;
                 amount_out = total_coin_without_take_pnl
-                    .checked_mul(amount_in)
-                    .unwrap()
-                    .checked_div(denominator)
-                    .unwrap();
+                    .checked_mul(amount_in).ok_or(AmmError::CheckedMulOverflow)?
+                    .checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?;
             }
         }
-        return amount_out;
+        Ok(amount_out)
     }
 
+    /// Calculates the required input amount (amount_in) to achieve a desired output amount (amount_out) 
+    /// using the constant product formula. Uses checked_ceil_div to ensure sufficient input.
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn swap_token_amount_base_out(
         amount_out: U128,
         total_pc_without_take_pnl: U128,
         total_coin_without_take_pnl: U128,
         swap_direction: SwapDirection,
-    ) -> U128 {
+    ) -> Result<U128, AmmError> {
         let amount_in;
         match swap_direction {
             SwapDirection::Coin2PC => {
-                // (x + delta_x) * (y + delta_y) = x * y
-                // (coin + amount_in) * (pc - amount_out) = coin * pc
-                // => amount_in = coin * pc / (pc - amount_out) - coin
-                // => amount_in = (coin * pc - pc * coin + amount_out * coin) / (pc - amount_out)
-                // => amount_in = (amount_out * coin) / (pc - amount_out)
-                let denominator = total_pc_without_take_pnl.checked_sub(amount_out).unwrap();
+                // amount_in = (amount_out * coin) / (pc - amount_out)
+                let denominator = total_pc_without_take_pnl.checked_sub(amount_out).ok_or(AmmError::CheckedSubOverflow)?;
                 amount_in = total_coin_without_take_pnl
-                    .checked_mul(amount_out)
-                    .unwrap()
-                    .checked_ceil_div(denominator)
-                    .unwrap()
+                    .checked_mul(amount_out).ok_or(AmmError::CheckedMulOverflow)?
+                    .checked_ceil_div(denominator).ok_or(AmmError::CheckedDivByZero)?;
             }
             SwapDirection::PC2Coin => {
-                // (x + delta_x) * (y + delta_y) = x * y
-                // (pc + amount_in) * (coin - amount_out) = coin * pc
-                // => amount_out = coin - coin * pc / (pc + amount_in)
-                // => amount_out = (coin * pc + coin * amount_in - coin * pc) / (pc + amount_in)
-                // => amount_out = coin * amount_in / (pc + amount_in)
-
-                // => amount_in = coin * pc / (coin - amount_out) - pc
-                // => amount_in = (coin * pc - pc * coin + pc * amount_out) / (coin - amount_out)
-                // => amount_in = (pc * amount_out) / (coin - amount_out)
-                let denominator = total_coin_without_take_pnl.checked_sub(amount_out).unwrap();
+                // amount_in = (pc * amount_out) / (coin - amount_out)
+                let denominator = total_coin_without_take_pnl.checked_sub(amount_out).ok_or(AmmError::CheckedSubOverflow)?;
                 amount_in = total_pc_without_take_pnl
-                    .checked_mul(amount_out)
-                    .unwrap()
-                    .checked_ceil_div(denominator)
-                    .unwrap()
+                    .checked_mul(amount_out).ok_or(AmmError::CheckedMulOverflow)?
+                    .checked_ceil_div(denominator).ok_or(AmmError::CheckedDivByZero)?;
             }
         }
-        return amount_in;
+        Ok(amount_in)
     }
 }
 
+// --- Auxiliary Structs and Traits ---
+
 /// The invariant calculator.
 pub struct InvariantToken {
-    /// Token coin
+    /// Token coin balance
     pub token_coin: u64,
-    /// Token pc
+    /// Token pc balance
     pub token_pc: u64,
 }
 
 impl InvariantToken {
-    /// Exchange rate
+    /// Exchange rate: converts Coin amount to PC amount.
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn exchange_coin_to_pc(
         &self,
         token_coin: u64,
         round_direction: RoundDirection,
-    ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
-            U128::from(token_coin)
-                .checked_mul(self.token_pc.into())
-                .unwrap()
-                .checked_div(self.token_coin.into())
-                .unwrap()
-                .as_u64()
+    ) -> Result<u64, AmmError> {
+        let numerator = U128::from(token_coin).checked_mul(self.token_pc.into()).ok_or(AmmError::CheckedMulOverflow)?;
+        let denominator = self.token_coin.into();
+
+        let amount_out_u128 = if round_direction == RoundDirection::Floor {
+            numerator.checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?
         } else {
-            U128::from(token_coin)
-                .checked_mul(self.token_pc.into())
-                .unwrap()
-                .checked_ceil_div(self.token_coin.into())
-                .unwrap()
-                .as_u64()
-        })
+            numerator.checked_ceil_div(denominator).ok_or(AmmError::CheckedDivByZero)?
+        };
+        
+        Self::to_u64(amount_out_u128.as_u128())
     }
 
-    /// Exchange rate
+    /// Exchange rate: converts PC amount to Coin amount.
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn exchange_pc_to_coin(
         &self,
         token_pc: u64,
         round_direction: RoundDirection,
-    ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
-            U128::from(token_pc)
-                .checked_mul(self.token_coin.into())
-                .unwrap()
-                .checked_div(self.token_pc.into())
-                .unwrap()
-                .as_u64()
+    ) -> Result<u64, AmmError> {
+        let numerator = U128::from(token_pc).checked_mul(self.token_coin.into()).ok_or(AmmError::CheckedMulOverflow)?;
+        let denominator = self.token_pc.into();
+
+        let amount_out_u128 = if round_direction == RoundDirection::Floor {
+            numerator.checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?
         } else {
-            U128::from(token_pc)
-                .checked_mul(self.token_coin.into())
-                .unwrap()
-                .checked_ceil_div(self.token_pc.into())
-                .unwrap()
-                .as_u64()
-        })
+            numerator.checked_ceil_div(denominator).ok_or(AmmError::CheckedDivByZero)?
+        };
+        
+        Self::to_u64(amount_out_u128.as_u128())
     }
 }
 
-/// The invariant calculator.
+/// The invariant calculator for pool token conversions.
 pub struct InvariantPool {
-    /// Token input
+    /// Token input amount
     pub token_input: u64,
-    /// Token total
+    /// Token total supply/amount
     pub token_total: u64,
 }
+
 impl InvariantPool {
-    /// Exchange rate
+    /// Exchange rate: converts pool total amount to token input amount.
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn exchange_pool_to_token(
         &self,
         token_total_amount: u64,
         round_direction: RoundDirection,
-    ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
-            U128::from(token_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
+    ) -> Result<u64, AmmError> {
+        let numerator = U128::from(token_total_amount).checked_mul(self.token_input.into()).ok_or(AmmError::CheckedMulOverflow)?;
+        let denominator = self.token_total.into();
+
+        let amount_out_u128 = if round_direction == RoundDirection::Floor {
+            numerator.checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?
         } else {
-            U128::from(token_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_ceil_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
-        })
+            numerator.checked_ceil_div(denominator).ok_or(AmmError::CheckedDivByZero)?
+        };
+
+        Self::to_u64(amount_out_u128.as_u128())
     }
-    /// Exchange rate
+    
+    /// Exchange rate: converts token amount to pool token amount.
+    /// CRITICAL: Replaced unwraps with safe error handling.
     pub fn exchange_token_to_pool(
         &self,
         pool_total_amount: u64,
         round_direction: RoundDirection,
-    ) -> Option<u64> {
-        Some(if round_direction == RoundDirection::Floor {
-            U128::from(pool_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
+    ) -> Result<u64, AmmError> {
+        let numerator = U128::from(pool_total_amount).checked_mul(self.token_input.into()).ok_or(AmmError::CheckedMulOverflow)?;
+        let denominator = self.token_total.into();
+        
+        let amount_out_u128 = if round_direction == RoundDirection::Floor {
+            numerator.checked_div(denominator).ok_or(AmmError::CheckedDivByZero)?
         } else {
-            U128::from(pool_total_amount)
-                .checked_mul(self.token_input.into())
-                .unwrap()
-                .checked_ceil_div(self.token_total.into())
-                .unwrap()
-                .as_u64()
-        })
+            numerator.checked_ceil_div(denominator).ok_or(AmmError::CheckedDivByZero)?
+        };
+        
+        Self::to_u64(amount_out_u128.as_u128())
     }
 }
 
