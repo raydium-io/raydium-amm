@@ -143,6 +143,8 @@ pub enum AmmError {
     InitLpAmountTooLess,
     #[error("Unknown AMM error.")]
     UnknownAmmError,
+    #[error("Not allowed due to same mint.")]
+    NotAllowed,
 }
 
 impl From<AmmError> for ProgramError {

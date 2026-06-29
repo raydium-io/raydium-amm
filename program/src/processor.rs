@@ -550,35 +550,126 @@ impl Processor {
         accounts: &[AccountInfo],
         init: InitializeInstruction2,
     ) -> ProgramResult {
-        let account_info_iter = &mut accounts.iter();
-        let token_program_info = next_account_info(account_info_iter)?;
-        let ata_token_program_info = next_account_info(account_info_iter)?;
-        let system_program_info = next_account_info(account_info_iter)?;
-        let rent_sysvar_info = next_account_info(account_info_iter)?;
-        let amm_info = next_account_info(account_info_iter)?;
-        let amm_authority_info = next_account_info(account_info_iter)?;
-        // Won't use.
-        // Can be any account.
-        let _amm_open_orders_info = next_account_info(account_info_iter)?;
-        let amm_lp_mint_info = next_account_info(account_info_iter)?;
-        let amm_coin_mint_info = next_account_info(account_info_iter)?;
-        let amm_pc_mint_info = next_account_info(account_info_iter)?;
-        let amm_coin_vault_info = next_account_info(account_info_iter)?;
-        let amm_pc_vault_info = next_account_info(account_info_iter)?;
-        let amm_target_orders_info = next_account_info(account_info_iter)?;
-        let amm_config_info = next_account_info(account_info_iter)?;
-        let create_fee_destination_info = next_account_info(account_info_iter)?;
-        // Won't use.
-        // Can be any account.
-        let _market_program_info = next_account_info(account_info_iter)?;
-        // Just a seed for AMM account.
-        // Can be any account.
-        let market_info = next_account_info(account_info_iter)?;
+        let input_account_len = accounts.len();
+        let (
+            token_program_info,
+            ata_token_program_info,
+            system_program_info,
+            rent_sysvar_info,
+            amm_info,
+            amm_authority_info,
+            amm_lp_mint_info,
+            amm_coin_mint_info,
+            amm_pc_mint_info,
+            amm_coin_vault_info,
+            amm_pc_vault_info,
+            amm_target_orders_info,
+            amm_config_info,
+            create_fee_destination_info,
+            market_info,
+            user_wallet_info,
+            user_token_coin_info,
+            user_token_pc_info,
+            user_token_lp_info,
+        ) = if input_account_len == 19 {
+            // Recommended use due to openbook has not supported.
+            let account_info_iter = &mut accounts.iter();
+            let token_program_info = next_account_info(account_info_iter)?;
+            let ata_token_program_info = next_account_info(account_info_iter)?;
+            let system_program_info = next_account_info(account_info_iter)?;
+            let rent_sysvar_info = next_account_info(account_info_iter)?;
+            let amm_info = next_account_info(account_info_iter)?;
+            let amm_authority_info = next_account_info(account_info_iter)?;
+            let amm_lp_mint_info = next_account_info(account_info_iter)?;
+            let amm_coin_mint_info = next_account_info(account_info_iter)?;
+            let amm_pc_mint_info = next_account_info(account_info_iter)?;
+            let amm_coin_vault_info = next_account_info(account_info_iter)?;
+            let amm_pc_vault_info = next_account_info(account_info_iter)?;
+            let amm_target_orders_info = next_account_info(account_info_iter)?;
+            let amm_config_info = next_account_info(account_info_iter)?;
+            let create_fee_destination_info = next_account_info(account_info_iter)?;
+            // Just a seed for AMM account.
+            // Can be any account.
+            let market_info = next_account_info(account_info_iter)?;
 
-        let user_wallet_info = next_account_info(account_info_iter)?;
-        let user_token_coin_info = next_account_info(account_info_iter)?;
-        let user_token_pc_info = next_account_info(account_info_iter)?;
-        let user_token_lp_info = next_account_info(account_info_iter)?;
+            let user_wallet_info = next_account_info(account_info_iter)?;
+            let user_token_coin_info = next_account_info(account_info_iter)?;
+            let user_token_pc_info = next_account_info(account_info_iter)?;
+            let user_token_lp_info = next_account_info(account_info_iter)?;
+
+            (
+                token_program_info,
+                ata_token_program_info,
+                system_program_info,
+                rent_sysvar_info,
+                amm_info,
+                amm_authority_info,
+                amm_lp_mint_info,
+                amm_coin_mint_info,
+                amm_pc_mint_info,
+                amm_coin_vault_info,
+                amm_pc_vault_info,
+                amm_target_orders_info,
+                amm_config_info,
+                create_fee_destination_info,
+                market_info,
+                user_wallet_info,
+                user_token_coin_info,
+                user_token_pc_info,
+                user_token_lp_info,
+            )
+        } else {
+            let account_info_iter = &mut accounts.iter();
+            let token_program_info = next_account_info(account_info_iter)?;
+            let ata_token_program_info = next_account_info(account_info_iter)?;
+            let system_program_info = next_account_info(account_info_iter)?;
+            let rent_sysvar_info = next_account_info(account_info_iter)?;
+            let amm_info = next_account_info(account_info_iter)?;
+            let amm_authority_info = next_account_info(account_info_iter)?;
+            // Won't use.
+            // Can be any account.
+            let _amm_open_orders_info = next_account_info(account_info_iter)?;
+            let amm_lp_mint_info = next_account_info(account_info_iter)?;
+            let amm_coin_mint_info = next_account_info(account_info_iter)?;
+            let amm_pc_mint_info = next_account_info(account_info_iter)?;
+            let amm_coin_vault_info = next_account_info(account_info_iter)?;
+            let amm_pc_vault_info = next_account_info(account_info_iter)?;
+            let amm_target_orders_info = next_account_info(account_info_iter)?;
+            let amm_config_info = next_account_info(account_info_iter)?;
+            let create_fee_destination_info = next_account_info(account_info_iter)?;
+            // Won't use.
+            // Can be any account.
+            let _market_program_info = next_account_info(account_info_iter)?;
+            // Just a seed for AMM account.
+            // Can be any account.
+            let market_info = next_account_info(account_info_iter)?;
+
+            let user_wallet_info = next_account_info(account_info_iter)?;
+            let user_token_coin_info = next_account_info(account_info_iter)?;
+            let user_token_pc_info = next_account_info(account_info_iter)?;
+            let user_token_lp_info = next_account_info(account_info_iter)?;
+            (
+                token_program_info,
+                ata_token_program_info,
+                system_program_info,
+                rent_sysvar_info,
+                amm_info,
+                amm_authority_info,
+                amm_lp_mint_info,
+                amm_coin_mint_info,
+                amm_pc_mint_info,
+                amm_coin_vault_info,
+                amm_pc_vault_info,
+                amm_target_orders_info,
+                amm_config_info,
+                create_fee_destination_info,
+                market_info,
+                user_wallet_info,
+                user_token_coin_info,
+                user_token_pc_info,
+                user_token_lp_info,
+            )
+        };
 
         let (pda, _) = Pubkey::find_program_address(&[&AMM_CONFIG_SEED], program_id);
         if pda != *amm_config_info.key || amm_config_info.owner != program_id {
@@ -982,6 +1073,9 @@ impl Processor {
         };
 
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
+        if amm.pc_vault_mint == amm.coin_vault_mint {
+            return Err(AmmError::NotAllowed.into());
+        }
         if deposit.max_coin_amount == 0 || deposit.max_pc_amount == 0 {
             encode_ray_log(DepositLog {
                 log_type: LogType::Deposit.into_u8(),
@@ -1010,9 +1104,6 @@ impl Processor {
             != Self::authority_id(program_id, AUTHORITY_AMM, amm.nonce as u8)?
         {
             return Err(AmmError::InvalidProgramAddress.into());
-        }
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
         }
         check_assert_eq!(
             *token_program_info.key,
@@ -1304,9 +1395,6 @@ impl Processor {
         if amm_info.owner != program_id {
             return Err(AmmError::InvalidOwner.into());
         }
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
-        }
 
         let (pda, _) = Pubkey::find_program_address(&[&AMM_CONFIG_SEED], program_id);
         if pda != *amm_config_info.key || amm_config_info.owner != program_id {
@@ -1568,9 +1656,6 @@ impl Processor {
         {
             return Err(AmmError::InvalidProgramAddress.into());
         }
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
-        }
         check_assert_eq!(
             *token_program_info.key,
             spl_token::id(),
@@ -1779,8 +1864,8 @@ impl Processor {
         let _market_program_info = next_account_info(account_info_iter)?;
 
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
+        if amm.pc_vault_mint == amm.coin_vault_mint {
+            return Err(AmmError::NotAllowed.into());
         }
         let _market_info = next_account_info(account_info_iter)?;
         let _market_bids_info = next_account_info(account_info_iter)?;
@@ -1840,15 +1925,7 @@ impl Processor {
 
         if !AmmStatus::from_u64(amm.status).swap_permission() {
             msg!(&format!("swap_base_in: status {}", identity(amm.status)));
-            let clock = Clock::get()?;
-            if amm.status == AmmStatus::OrderBookOnly.into_u64()
-                && (clock.unix_timestamp as u64) >= amm.state_data.orderbook_to_init_time
-            {
-                amm.status = AmmStatus::Initialized.into_u64();
-                msg!("swap_base_in: OrderBook to Initialized");
-            } else {
-                return Err(AmmError::InvalidStatus.into());
-            }
+            return Err(AmmError::InvalidStatus.into());
         } else if amm.status == AmmStatus::WaitingTrade.into_u64() {
             let clock = Clock::get()?;
             if (clock.unix_timestamp as u64) < amm.state_data.pool_open_time {
@@ -1997,8 +2074,8 @@ impl Processor {
         let _market_program_info = next_account_info(account_info_iter)?;
 
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
+        if amm.pc_vault_mint == amm.coin_vault_mint {
+            return Err(AmmError::NotAllowed.into());
         }
 
         let _market_info = next_account_info(account_info_iter)?;
@@ -2062,15 +2139,7 @@ impl Processor {
 
         if !AmmStatus::from_u64(amm.status).swap_permission() {
             msg!(&format!("swap_base_out: status {}", identity(amm.status)));
-            let clock = Clock::get()?;
-            if amm.status == AmmStatus::OrderBookOnly.into_u64()
-                && (clock.unix_timestamp as u64) >= amm.state_data.orderbook_to_init_time
-            {
-                amm.status = AmmStatus::Initialized.into_u64();
-                msg!("swap_base_out: OrderBook to Initialized");
-            } else {
-                return Err(AmmError::InvalidStatus.into());
-            }
+            return Err(AmmError::InvalidStatus.into());
         } else if amm.status == AmmStatus::WaitingTrade.into_u64() {
             let clock = Clock::get()?;
             if (clock.unix_timestamp as u64) < amm.state_data.pool_open_time {
@@ -2119,9 +2188,6 @@ impl Processor {
             )
             .unwrap()
             .as_u64();
-        let swap_fee = swap_in_after_add_fee
-            .checked_sub(swap_in_before_add_fee.as_u64())
-            .unwrap();
         encode_ray_log(SwapBaseOutLog {
             log_type: LogType::SwapBaseOut.into_u8(),
             max_in: swap.max_amount_in,
@@ -2208,8 +2274,8 @@ impl Processor {
         let amm_coin_vault_info = next_account_info(account_info_iter)?;
         let amm_pc_vault_info = next_account_info(account_info_iter)?;
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
+        if amm.pc_vault_mint == amm.coin_vault_mint {
+            return Err(AmmError::NotAllowed.into());
         }
         let user_source_info = next_account_info(account_info_iter)?;
         let user_destination_info = next_account_info(account_info_iter)?;
@@ -2261,15 +2327,7 @@ impl Processor {
 
         if !AmmStatus::from_u64(amm.status).swap_permission() {
             msg!(&format!("swap_base_in_v2: status {}", identity(amm.status)));
-            let clock = Clock::get()?;
-            if amm.status == AmmStatus::OrderBookOnly.into_u64()
-                && (clock.unix_timestamp as u64) >= amm.state_data.orderbook_to_init_time
-            {
-                amm.status = AmmStatus::Initialized.into_u64();
-                msg!("swap_base_in_v2: OrderBook to Initialized");
-            } else {
-                return Err(AmmError::InvalidStatus.into());
-            }
+            return Err(AmmError::InvalidStatus.into());
         } else if amm.status == AmmStatus::WaitingTrade.into_u64() {
             let clock = Clock::get()?;
             if (clock.unix_timestamp as u64) < amm.state_data.pool_open_time {
@@ -2405,8 +2463,8 @@ impl Processor {
         let amm_coin_vault_info = next_account_info(account_info_iter)?;
         let amm_pc_vault_info = next_account_info(account_info_iter)?;
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
+        if amm.pc_vault_mint == amm.coin_vault_mint {
+            return Err(AmmError::NotAllowed.into());
         }
         let user_source_info = next_account_info(account_info_iter)?;
         let user_destination_info = next_account_info(account_info_iter)?;
@@ -2460,19 +2518,7 @@ impl Processor {
             Self::unpack_token_account(&user_destination_info, spl_token_program_id)?;
 
         if !AmmStatus::from_u64(amm.status).swap_permission() {
-            msg!(&format!(
-                "swap_base_out_v2: status {}",
-                identity(amm.status)
-            ));
-            let clock = Clock::get()?;
-            if amm.status == AmmStatus::OrderBookOnly.into_u64()
-                && (clock.unix_timestamp as u64) >= amm.state_data.orderbook_to_init_time
-            {
-                amm.status = AmmStatus::Initialized.into_u64();
-                msg!("swap_base_out_v2: OrderBook to Initialized");
-            } else {
-                return Err(AmmError::InvalidStatus.into());
-            }
+            return Err(AmmError::InvalidStatus.into());
         } else if amm.status == AmmStatus::WaitingTrade.into_u64() {
             let clock = Clock::get()?;
             if (clock.unix_timestamp as u64) < amm.state_data.pool_open_time {
@@ -2521,9 +2567,6 @@ impl Processor {
             )
             .unwrap()
             .as_u64();
-        let swap_fee = swap_in_after_add_fee
-            .checked_sub(swap_in_before_add_fee.as_u64())
-            .unwrap();
         encode_ray_log(SwapBaseOutLog {
             log_type: LogType::SwapBaseOut.into_u8(),
             max_in: swap.max_amount_in,
@@ -2618,9 +2661,7 @@ impl Processor {
             return Err(AmmError::InvalidSplTokenProgram.into());
         }
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
-        if AmmStatus::from_u64(amm.status).orderbook_permission() {
-            return Err(AmmError::InvalidStatus.into());
-        }
+
         if *amm_authority_info.key
             != Self::authority_id(program_id, AUTHORITY_AMM, amm.nonce as u8)?
         {
