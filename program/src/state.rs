@@ -11,7 +11,6 @@ use solana_program::{
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use bytemuck::{from_bytes, from_bytes_mut, Pod, Zeroable};
 use safe_transmute::{self, trivial::TriviallyTransmutable};
-use serde::{Deserialize, Serialize};
 use std::{
     cell::{Ref, RefMut},
     convert::TryInto,
@@ -370,45 +369,17 @@ impl AmmState {
 pub enum AmmParams {
     Status = 0u64,
     State = 1u64,
-    OrderNum = 2u64,
-    Depth = 3u64,
-    AmountWave = 4u64,
-    MinPriceMultiplier = 5u64,
-    MaxPriceMultiplier = 6u64,
-    MinSize = 7u64,
-    VolMaxCutRatio = 8u64,
-    Fees = 9u64,
-    AmmOwner = 10u64,
-    SetOpenTime = 11u64,
-    LastOrderDistance = 12u64,
-    InitOrderDepth = 13u64,
-    SetSwitchTime = 14u64,
-    ClearOpenTime = 15u64,
-    Separate = 16u64,
-    UpdateOpenOrder = 17u64,
+    Fees = 2u64,
+    SetOpenTime = 3u64,
 }
 impl AmmParams {
-    pub fn from_u64(state: u64) -> Self {
+    pub fn from_u64(state: u64) -> Result<Self, ProgramError> {
         match state {
-            0u64 => AmmParams::Status,
-            1u64 => AmmParams::State,
-            2u64 => AmmParams::OrderNum,
-            3u64 => AmmParams::Depth,
-            4u64 => AmmParams::AmountWave,
-            5u64 => AmmParams::MinPriceMultiplier,
-            6u64 => AmmParams::MaxPriceMultiplier,
-            7u64 => AmmParams::MinSize,
-            8u64 => AmmParams::VolMaxCutRatio,
-            9u64 => AmmParams::Fees,
-            10u64 => AmmParams::AmmOwner,
-            11u64 => AmmParams::SetOpenTime,
-            12u64 => AmmParams::LastOrderDistance,
-            13u64 => AmmParams::InitOrderDepth,
-            14u64 => AmmParams::SetSwitchTime,
-            15u64 => AmmParams::ClearOpenTime,
-            16u64 => AmmParams::Separate,
-            17u64 => AmmParams::UpdateOpenOrder,
-            _ => unreachable!(),
+            0u64 => Ok(AmmParams::Status),
+            1u64 => Ok(AmmParams::State),
+            2u64 => Ok(AmmParams::Fees),
+            3u64 => Ok(AmmParams::SetOpenTime),
+            _ => return Err(ProgramError::InvalidInstructionData.into()),
         }
     }
 
@@ -416,22 +387,8 @@ impl AmmParams {
         match self {
             AmmParams::Status => 0u64,
             AmmParams::State => 1u64,
-            AmmParams::OrderNum => 2u64,
-            AmmParams::Depth => 3u64,
-            AmmParams::AmountWave => 4u64,
-            AmmParams::MinPriceMultiplier => 5u64,
-            AmmParams::MaxPriceMultiplier => 6u64,
-            AmmParams::MinSize => 7u64,
-            AmmParams::VolMaxCutRatio => 8u64,
-            AmmParams::Fees => 9u64,
-            AmmParams::AmmOwner => 10u64,
-            AmmParams::SetOpenTime => 11u64,
-            AmmParams::LastOrderDistance => 12u64,
-            AmmParams::InitOrderDepth => 13u64,
-            AmmParams::SetSwitchTime => 14u64,
-            AmmParams::ClearOpenTime => 15u64,
-            AmmParams::Separate => 16u64,
-            AmmParams::UpdateOpenOrder => 17u64,
+            AmmParams::Fees => 2u64,
+            AmmParams::SetOpenTime => 3u64,
         }
     }
 }
@@ -585,29 +542,38 @@ pub struct StateData {
     pub need_take_pnl_coin: u64,
     /// delay to take pnl pc
     pub need_take_pnl_pc: u64,
-    /// total pnl pc
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub total_pnl_pc: u64,
-    /// total pnl coin
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub total_pnl_coin: u64,
-    /// ido pool open time
+    /// pool open time
     pub pool_open_time: u64,
     /// padding for future updates
     pub padding: [u64; 2],
-    /// switch from orderbookonly to init
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub orderbook_to_init_time: u64,
 
-    /// swap coin in amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_coin_in_amount: u128,
-    /// swap pc out amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_pc_out_amount: u128,
-    /// charge pc as swap fee while swap pc to coin
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_acc_pc_fee: u64,
 
-    /// swap pc in amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_pc_in_amount: u128,
-    /// swap coin out amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_coin_out_amount: u128,
-    /// charge coin as swap fee while swap coin to pc
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_acc_coin_fee: u64,
 }
 
@@ -857,115 +823,6 @@ impl AmmConfig {
         }
         let data = Self::load(account)?;
         Ok(data)
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct LastOrderDistance {
-    pub last_order_numerator: u64,
-    pub last_order_denominator: u64,
-}
-
-/// For simulateTransaction to get instruction data
-#[cfg_attr(feature = "client", derive(Debug))]
-#[derive(Copy, Clone)]
-#[repr(u64)]
-pub enum SimulateParams {
-    PoolInfo = 0u64,
-    SwapBaseInInfo = 1u64,
-    SwapBaseOutInfo = 2u64,
-    RunCrankInfo = 3u64,
-}
-impl SimulateParams {
-    pub fn from_u64(flag: u64) -> Self {
-        match flag {
-            0u64 => SimulateParams::PoolInfo,
-            1u64 => SimulateParams::SwapBaseInInfo,
-            2u64 => SimulateParams::SwapBaseOutInfo,
-            3u64 => SimulateParams::RunCrankInfo,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn into_u64(&self) -> u64 {
-        match self {
-            SimulateParams::PoolInfo => 0u64,
-            SimulateParams::SwapBaseInInfo => 1u64,
-            SimulateParams::SwapBaseOutInfo => 2u64,
-            SimulateParams::RunCrankInfo => 3u64,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct RunCrankData {
-    pub status: u64,
-    pub state: u64,
-    pub run_crank: bool,
-}
-impl RunCrankData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct GetPoolData {
-    pub status: u64,
-    pub coin_decimals: u64,
-    pub pc_decimals: u64,
-    pub lp_decimals: u64,
-    // pool token vault without pnl
-    pub pool_pc_amount: u64,
-    pub pool_coin_amount: u64,
-    pub pnl_pc_amount: u64,
-    pub pnl_coin_amount: u64,
-    pub pool_lp_supply: u64,
-    pub pool_open_time: u64,
-    pub amm_id: String,
-}
-impl GetPoolData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct GetSwapBaseInData {
-    pub pool_data: GetPoolData,
-    pub amount_in: u64,
-    pub minimum_amount_out: u64,
-    pub price_impact: u64,
-}
-impl GetSwapBaseInData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct GetSwapBaseOutData {
-    pub pool_data: GetPoolData,
-    pub max_amount_in: u64,
-    pub amount_out: u64,
-    pub price_impact: u64,
-}
-impl GetSwapBaseOutData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
     }
 }
 

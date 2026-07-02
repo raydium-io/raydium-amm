@@ -4,7 +4,6 @@ use solana_program::{
     msg,
     // entrypoint::ProgramResult, // ProgramResult is not used here, so it is commented out
     pubkey::Pubkey,
-    program_error::ProgramError, // Used for cleaner return types (if macro were to be used externally)
 };
 
 // Define a safe, fixed buffer size for structured logging (Solana has limits on message length)
@@ -12,7 +11,7 @@ pub const LOG_SIZE: usize = 256;
 
 /**
  * @macro check_assert_eq
- * @brief Checks if input and expected Pubkeys are equal. If not, logs the mismatch 
+ * @brief Checks if input and expected Pubkeys are equal. If not, logs the mismatch
  * using base64 and returns the specified ProgramError.
  */
 #[macro_export]
@@ -160,25 +159,25 @@ pub struct SwapBaseOutLog {
 
 /**
  * @function encode_ray_log
- * @brief Serializes a log struct (T) using bincode, encodes it to base64, 
+ * @brief Serializes a log struct (T) using bincode, encodes it to base64,
  * and emits it on-chain using solana_program::msg!
  * @param log The serializable log struct.
  */
 pub fn encode_ray_log<T: Serialize>(log: T) {
     // 1. Serialize struct using bincode
     let bytes = bincode::serialize(&log).unwrap();
-    
+
     // 2. Allocate buffer for base64 encoding (4/3 multiplier + padding tolerance)
     let mut out_buf = Vec::new();
     out_buf.resize(bytes.len() * 4 / 3 + 4, 0);
-    
+
     // 3. Encode binary data to base64 string slice
     let bytes_written = base64::encode_config_slice(bytes, base64::STANDARD, &mut out_buf);
     out_buf.resize(bytes_written, 0);
-    
+
     // 4. Convert slice to string (unsafe is fine here since it comes from base64 encoding)
     let msg_str = unsafe { std::str::from_utf8_unchecked(&out_buf) };
-    
+
     // 5. Emit the final message on-chain
     msg!(arrform!(LOG_SIZE, "ray_log: {}", msg_str).as_str());
 }
@@ -191,7 +190,7 @@ pub fn encode_ray_log<T: Serialize>(log: T) {
 pub fn decode_ray_log(log: &str) {
     // 1. Decode base64 string back to binary
     let bytes = base64::decode_config(log, base64::STANDARD).unwrap();
-    
+
     // 2. Use the first byte as the discriminant to determine the struct type
     match LogType::from_u8(bytes[0]) {
         LogType::Init => {

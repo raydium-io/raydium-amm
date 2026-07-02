@@ -13,7 +13,6 @@ use crate::{
     },
     state::{
         AmmConfig, AmmInfo, AmmParams, AmmResetFlag, AmmState, AmmStatus, Loadable, TargetOrders,
-        MAX_ORDER_LIMIT, TEN_THOUSAND,
     },
 };
 
@@ -2646,137 +2645,44 @@ impl Processor {
         setparams: SetParamsInstruction,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
-        let token_program_info = next_account_info(account_info_iter)?;
 
         let amm_info = next_account_info(account_info_iter)?;
-        let amm_authority_info = next_account_info(account_info_iter)?;
-        let amm_open_orders_info = next_account_info(account_info_iter)?;
-        let amm_target_orders_info = next_account_info(account_info_iter)?;
-        let amm_coin_vault_info = next_account_info(account_info_iter)?;
-        let amm_pc_vault_info = next_account_info(account_info_iter)?;
-
         let amm_owner_info = next_account_info(account_info_iter)?;
 
-        if *token_program_info.key != spl_token::ID {
-            return Err(AmmError::InvalidSplTokenProgram.into());
-        }
         let mut amm = AmmInfo::load_mut_checked(&amm_info, program_id)?;
 
-        if *amm_authority_info.key
-            != Self::authority_id(program_id, AUTHORITY_AMM, amm.nonce as u8)?
-        {
-            return Err(AmmError::InvalidProgramAddress.into());
-        }
         if amm_info.owner != program_id {
             return Err(AmmError::InvalidOwner.into());
         }
         if !amm_owner_info.is_signer || *amm_owner_info.key != config_feature::amm_owner::ID {
             return Err(AmmError::InvalidSignAccount.into());
         }
-        if *amm_open_orders_info.key != amm.open_orders {
-            return Err(AmmError::InvalidOpenOrders.into());
-        }
-        if amm.coin_vault != *amm_coin_vault_info.key {
-            return Err(AmmError::InvalidCoinVault.into());
-        }
-        if amm.pc_vault != *amm_pc_vault_info.key {
-            return Err(AmmError::InvalidPCVault.into());
-        }
-        if amm.target_orders != *amm_target_orders_info.key {
-            return Err(AmmError::InvalidTargetOrders.into());
-        }
 
         let param = setparams.param;
-        let mut set_valid = false;
-        match AmmParams::from_u64(param as u64) {
+        match AmmParams::from_u64(param as u64).unwrap() {
             AmmParams::Status => {
-                let value = match setparams.value {
-                    Some(a) => a,
+                match setparams.value {
+                    Some(status) => {
+                        if AmmStatus::valid_status(status) {
+                            amm.status = status as u64;
+                        } else {
+                            return Err(AmmError::InvalidInput.into());
+                        }
+                    }
                     None => return Err(AmmError::InvalidInput.into()),
                 };
-                if AmmStatus::valid_status(value) {
-                    amm.status = value as u64;
-                    set_valid = true;
-                }
             }
             AmmParams::State => {
-                let value = match setparams.value {
-                    Some(a) => a,
+                match setparams.value {
+                    Some(state) => {
+                        if AmmState::valid_state(state) {
+                            amm.state = state as u64;
+                        } else {
+                            return Err(AmmError::InvalidInput.into());
+                        }
+                    }
                     None => return Err(AmmError::InvalidInput.into()),
                 };
-                if AmmState::valid_state(value) {
-                    amm.state = value as u64;
-                    set_valid = true;
-                }
-            }
-            AmmParams::OrderNum => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                if value > MAX_ORDER_LIMIT as u64 {
-                    return Err(AmmError::InvalidInput.into());
-                }
-                amm.order_num = value as u64;
-                set_valid = true;
-            }
-            AmmParams::Depth => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                if value > 0 && value < 100 {
-                    amm.depth = value as u64;
-                    set_valid = true;
-                }
-            }
-            AmmParams::AmountWave => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                amm.amount_wave = value;
-                set_valid = true;
-            }
-            AmmParams::MinPriceMultiplier => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                if value < amm.max_price_multiplier {
-                    amm.min_price_multiplier = value;
-                    set_valid = true;
-                }
-            }
-            AmmParams::MaxPriceMultiplier => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                if value > amm.max_price_multiplier {
-                    amm.max_price_multiplier = value;
-                    set_valid = true;
-                }
-            }
-            AmmParams::VolMaxCutRatio => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                if value <= TEN_THOUSAND {
-                    amm.vol_max_cut_ratio = value;
-                    set_valid = true;
-                }
-            }
-            AmmParams::Separate => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                if value <= TEN_THOUSAND {
-                    amm.fees.min_separate_numerator = value;
-                    set_valid = true;
-                }
             }
             AmmParams::Fees => {
                 let fees = match setparams.fees {
@@ -2785,68 +2691,15 @@ impl Processor {
                 };
                 fees.validate()?;
                 amm.fees = fees;
-                set_valid = true;
-            }
-            AmmParams::AmmOwner => {
-                let new_pubkey = match setparams.new_pubkey {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                amm.amm_owner = new_pubkey;
-                set_valid = true;
             }
             AmmParams::SetOpenTime => {
-                let value = match setparams.value {
-                    Some(a) => a,
+                match setparams.value {
+                    Some(time) => {
+                        amm.state_data.pool_open_time = time as u64;
+                    }
                     None => return Err(AmmError::InvalidInput.into()),
                 };
-                amm.state_data.pool_open_time = value as u64;
-                set_valid = true;
             }
-            AmmParams::LastOrderDistance => {
-                let mut target = TargetOrders::load_mut_checked(
-                    &amm_target_orders_info,
-                    program_id,
-                    amm_info.key,
-                )?;
-                let distance = match setparams.last_order_distance {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                target.last_order_numerator = distance.last_order_numerator;
-                target.last_order_denominator = distance.last_order_denominator;
-                set_valid = true;
-            }
-            AmmParams::InitOrderDepth => {
-                amm.order_num = 7u64;
-                amm.depth = 3u64;
-                set_valid = true;
-            }
-            AmmParams::SetSwitchTime => {
-                let value = match setparams.value {
-                    Some(a) => a,
-                    None => return Err(AmmError::InvalidInput.into()),
-                };
-                amm.state_data.orderbook_to_init_time = value as u64;
-                set_valid = true;
-            }
-            AmmParams::ClearOpenTime => {
-                amm.state_data.pool_open_time = 0;
-                amm.state_data.orderbook_to_init_time = 0;
-                set_valid = true;
-            }
-            AmmParams::UpdateOpenOrder => {
-                set_valid = true;
-            }
-            _ => {
-                return Err(AmmError::InvalidInput.into());
-            }
-        }
-        if set_valid {
-            amm.state = AmmState::CancelAllOrdersState.into_u64();
-            amm.reset_flag = AmmResetFlag::ResetYes.into_u64();
-        } else {
-            return Err(AmmError::InvalidParamsSet.into());
         }
         amm.recent_epoch = Clock::get()?.epoch;
         Ok(())
