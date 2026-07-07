@@ -378,7 +378,7 @@ impl AmmInstruction {
             }
             6 => {
                 let (param, rest) = Self::unpack_u8(rest)?;
-                match AmmParams::from_u64(param as u64).unwrap() {
+                match AmmParams::from_u64(param as u64)? {
                     AmmParams::Fees => {
                         if rest.len() >= Fees::LEN {
                             let (fees, _rest) = rest.split_at(Fees::LEN);
@@ -392,7 +392,7 @@ impl AmmInstruction {
                             return Err(ProgramError::InvalidInstructionData.into());
                         }
                     }
-                    _ => {
+                    AmmParams::Status | AmmParams::State | AmmParams::SetOpenTime => {
                         if rest.len() >= 8 {
                             let (value, _rest) = Self::unpack_u64(rest)?;
                             Self::SetParams(SetParamsInstruction {
