@@ -1,7 +1,6 @@
 //! State transition types
 
-use crate::{error::AmmError, math::Calculator};
-use serum_dex::state::ToAlignedBytes;
+use crate::error::AmmError;
 use solana_program::{
     account_info::AccountInfo,
     program_error::ProgramError,
@@ -12,10 +11,8 @@ use solana_program::{
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use bytemuck::{from_bytes, from_bytes_mut, Pod, Zeroable};
 use safe_transmute::{self, trivial::TriviallyTransmutable};
-use serde::{Deserialize, Serialize};
 use std::{
     cell::{Ref, RefMut},
-    convert::identity,
     convert::TryInto,
     mem::size_of,
 };
@@ -83,7 +80,7 @@ unsafe impl TriviallyTransmutable for TargetOrder {}
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct TargetOrders {
-    pub owner: [u64; 4],
+    pub owner: Pubkey,
     pub buy_orders: [TargetOrder; 50],
     pub padding1: [u64; 8],
     pub target_x: u128,
@@ -120,7 +117,7 @@ impl Default for TargetOrders {
     #[inline]
     fn default() -> TargetOrders {
         TargetOrders {
-            owner: [0; 4],
+            owner: Pubkey::default(),
             buy_orders: [TargetOrder::default(); 50],
             padding1: [0; 8],
             target_x: 0,
@@ -153,10 +150,10 @@ impl TargetOrders {
     /// init
     #[inline]
     pub fn check_init(&mut self, x: u128, y: u128, owner: &Pubkey) -> Result<(), ProgramError> {
-        if identity(self.owner) != Pubkey::default().to_aligned_bytes() {
+        if self.owner != Pubkey::default() {
             return Err(AmmError::AlreadyInUse.into());
         }
-        self.owner = owner.to_aligned_bytes();
+        self.owner = *owner;
         self.last_order_numerator = 0; // 3
         self.last_order_denominator = 0; // 1
 
@@ -194,7 +191,7 @@ impl TargetOrders {
             return Err(AmmError::ExpectedAccount.into());
         }
         let data = Self::load_mut(account)?;
-        if identity(data.owner) != owner.to_aligned_bytes() {
+        if data.owner != *owner {
             return Err(AmmError::InvalidTargetOwner.into());
         }
         Ok(data)
@@ -214,7 +211,7 @@ impl TargetOrders {
             return Err(AmmError::ExpectedAccount.into());
         }
         let data = Self::load(account)?;
-        if identity(data.owner) != owner.to_aligned_bytes() {
+        if data.owner != *owner {
             return Err(AmmError::InvalidTargetOwner.into());
         }
         Ok(data)
@@ -325,7 +322,7 @@ impl AmmStatus {
 
 #[repr(u64)]
 pub enum AmmState {
-    InvlidState = 0u64,
+    InvalidState = 0u64,
     IdleState = 1u64,
     CancelAllOrdersState = 2u64,
     PlanOrdersState = 3u64,
@@ -336,7 +333,7 @@ pub enum AmmState {
 impl AmmState {
     pub fn from_u64(state: u64) -> Self {
         match state {
-            0u64 => AmmState::InvlidState,
+            0u64 => AmmState::InvalidState,
             1u64 => AmmState::IdleState,
             2u64 => AmmState::CancelAllOrdersState,
             3u64 => AmmState::PlanOrdersState,
@@ -349,7 +346,7 @@ impl AmmState {
 
     pub fn into_u64(&self) -> u64 {
         match self {
-            AmmState::InvlidState => 0u64,
+            AmmState::InvalidState => 0u64,
             AmmState::IdleState => 1u64,
             AmmState::CancelAllOrdersState => 2u64,
             AmmState::PlanOrdersState => 3u64,
@@ -372,45 +369,17 @@ impl AmmState {
 pub enum AmmParams {
     Status = 0u64,
     State = 1u64,
-    OrderNum = 2u64,
-    Depth = 3u64,
-    AmountWave = 4u64,
-    MinPriceMultiplier = 5u64,
-    MaxPriceMultiplier = 6u64,
-    MinSize = 7u64,
-    VolMaxCutRatio = 8u64,
-    Fees = 9u64,
-    AmmOwner = 10u64,
-    SetOpenTime = 11u64,
-    LastOrderDistance = 12u64,
-    InitOrderDepth = 13u64,
-    SetSwitchTime = 14u64,
-    ClearOpenTime = 15u64,
-    Seperate = 16u64,
-    UpdateOpenOrder = 17u64,
+    Fees = 2u64,
+    SetOpenTime = 3u64,
 }
 impl AmmParams {
-    pub fn from_u64(state: u64) -> Self {
+    pub fn from_u64(state: u64) -> Result<Self, ProgramError> {
         match state {
-            0u64 => AmmParams::Status,
-            1u64 => AmmParams::State,
-            2u64 => AmmParams::OrderNum,
-            3u64 => AmmParams::Depth,
-            4u64 => AmmParams::AmountWave,
-            5u64 => AmmParams::MinPriceMultiplier,
-            6u64 => AmmParams::MaxPriceMultiplier,
-            7u64 => AmmParams::MinSize,
-            8u64 => AmmParams::VolMaxCutRatio,
-            9u64 => AmmParams::Fees,
-            10u64 => AmmParams::AmmOwner,
-            11u64 => AmmParams::SetOpenTime,
-            12u64 => AmmParams::LastOrderDistance,
-            13u64 => AmmParams::InitOrderDepth,
-            14u64 => AmmParams::SetSwitchTime,
-            15u64 => AmmParams::ClearOpenTime,
-            16u64 => AmmParams::Seperate,
-            17u64 => AmmParams::UpdateOpenOrder,
-            _ => unreachable!(),
+            0u64 => Ok(AmmParams::Status),
+            1u64 => Ok(AmmParams::State),
+            2u64 => Ok(AmmParams::Fees),
+            3u64 => Ok(AmmParams::SetOpenTime),
+            _ => return Err(ProgramError::InvalidInstructionData.into()),
         }
     }
 
@@ -418,22 +387,8 @@ impl AmmParams {
         match self {
             AmmParams::Status => 0u64,
             AmmParams::State => 1u64,
-            AmmParams::OrderNum => 2u64,
-            AmmParams::Depth => 3u64,
-            AmmParams::AmountWave => 4u64,
-            AmmParams::MinPriceMultiplier => 5u64,
-            AmmParams::MaxPriceMultiplier => 6u64,
-            AmmParams::MinSize => 7u64,
-            AmmParams::VolMaxCutRatio => 8u64,
-            AmmParams::Fees => 9u64,
-            AmmParams::AmmOwner => 10u64,
-            AmmParams::SetOpenTime => 11u64,
-            AmmParams::LastOrderDistance => 12u64,
-            AmmParams::InitOrderDepth => 13u64,
-            AmmParams::SetSwitchTime => 14u64,
-            AmmParams::ClearOpenTime => 15u64,
-            AmmParams::Seperate => 16u64,
-            AmmParams::UpdateOpenOrder => 17u64,
+            AmmParams::Fees => 2u64,
+            AmmParams::SetOpenTime => 3u64,
         }
     }
 }
@@ -587,29 +542,38 @@ pub struct StateData {
     pub need_take_pnl_coin: u64,
     /// delay to take pnl pc
     pub need_take_pnl_pc: u64,
-    /// total pnl pc
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub total_pnl_pc: u64,
-    /// total pnl coin
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub total_pnl_coin: u64,
-    /// ido pool open time
+    /// pool open time
     pub pool_open_time: u64,
     /// padding for future updates
     pub padding: [u64; 2],
-    /// switch from orderbookonly to init
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub orderbook_to_init_time: u64,
 
-    /// swap coin in amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_coin_in_amount: u128,
-    /// swap pc out amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_pc_out_amount: u128,
-    /// charge pc as swap fee while swap pc to coin
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_acc_pc_fee: u64,
 
-    /// swap pc in amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_pc_in_amount: u128,
-    /// swap coin out amount
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_coin_out_amount: u128,
-    /// charge coin as swap fee while swap coin to pc
+    /// Deprecated field.
+    /// No longer in use or updated.
     pub swap_acc_coin_fee: u64,
 }
 
@@ -756,8 +720,8 @@ impl AmmInfo {
         open_time: u64,
         coin_decimals: u8,
         pc_decimals: u8,
-        coin_lot_size: u64,
-        pc_lot_size: u64,
+        _coin_lot_size: u64,
+        _pc_lot_size: u64,
     ) -> Result<(), AmmError> {
         self.fees.initialize()?;
         self.state_data.initialize(open_time)?;
@@ -779,47 +743,9 @@ impl AmmInfo {
                 .checked_pow(coin_decimals.try_into().unwrap())
                 .unwrap();
         }
-        let temp_value_numerator = (coin_lot_size as u128)
-            .checked_mul(
-                (10 as u128)
-                    .checked_pow(pc_decimals.try_into().unwrap())
-                    .unwrap(),
-            )
-            .unwrap();
-        let temp_value_denominator = (pc_lot_size as u128)
-            .checked_mul(
-                (10 as u128)
-                    .checked_pow(coin_decimals.try_into().unwrap())
-                    .unwrap(),
-            )
-            .unwrap();
-        if (self.sys_decimal_value as u128)
-            <= temp_value_numerator
-                .checked_div(temp_value_denominator)
-                .unwrap()
-        {
-            self.sys_decimal_value = Calculator::to_u64(
-                temp_value_numerator
-                    .checked_div(temp_value_denominator)
-                    .unwrap(),
-            )
-            .unwrap();
-        }
-        let min_size = (coin_lot_size as u128)
-            .checked_mul(self.sys_decimal_value as u128)
-            .unwrap()
-            .checked_div(
-                (10u128)
-                    .checked_pow(coin_decimals.try_into().unwrap())
-                    .unwrap(),
-            )
-            .unwrap();
-        if min_size < u64::max_value().into() {
-            self.min_size = Calculator::to_u64(min_size)?;
-        } else {
-            // must check not zero in process_monitor_step
-            self.min_size = 0;
-        }
+
+        self.min_size = 0;
+
         self.vol_max_cut_ratio = 500; // TEN_THOUSAND as denominator
         self.amount_wave = self
             .sys_decimal_value
@@ -827,14 +753,8 @@ impl AmmInfo {
             .unwrap()
             .checked_div(1000)
             .unwrap();
-        self.coin_lot_size = coin_lot_size;
-        self.pc_lot_size = Calculator::convert_in_pc_lot_size(
-            pc_decimals,
-            coin_decimals,
-            pc_lot_size,
-            coin_lot_size,
-            self.sys_decimal_value,
-        );
+        self.coin_lot_size = 0;
+        self.pc_lot_size = 0;
         self.min_price_multiplier = 1;
         self.max_price_multiplier = 1000000000;
         self.client_order_id = 0;
@@ -903,115 +823,6 @@ impl AmmConfig {
         }
         let data = Self::load(account)?;
         Ok(data)
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct LastOrderDistance {
-    pub last_order_numerator: u64,
-    pub last_order_denominator: u64,
-}
-
-/// For simulateTransaction to get instruction data
-#[cfg_attr(feature = "client", derive(Debug))]
-#[derive(Copy, Clone)]
-#[repr(u64)]
-pub enum SimulateParams {
-    PoolInfo = 0u64,
-    SwapBaseInInfo = 1u64,
-    SwapBaseOutInfo = 2u64,
-    RunCrankInfo = 3u64,
-}
-impl SimulateParams {
-    pub fn from_u64(flag: u64) -> Self {
-        match flag {
-            0u64 => SimulateParams::PoolInfo,
-            1u64 => SimulateParams::SwapBaseInInfo,
-            2u64 => SimulateParams::SwapBaseOutInfo,
-            3u64 => SimulateParams::RunCrankInfo,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn into_u64(&self) -> u64 {
-        match self {
-            SimulateParams::PoolInfo => 0u64,
-            SimulateParams::SwapBaseInInfo => 1u64,
-            SimulateParams::SwapBaseOutInfo => 2u64,
-            SimulateParams::RunCrankInfo => 3u64,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct RunCrankData {
-    pub status: u64,
-    pub state: u64,
-    pub run_crank: bool,
-}
-impl RunCrankData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct GetPoolData {
-    pub status: u64,
-    pub coin_decimals: u64,
-    pub pc_decimals: u64,
-    pub lp_decimals: u64,
-    // pool token vault without pnl
-    pub pool_pc_amount: u64,
-    pub pool_coin_amount: u64,
-    pub pnl_pc_amount: u64,
-    pub pnl_coin_amount: u64,
-    pub pool_lp_supply: u64,
-    pub pool_open_time: u64,
-    pub amm_id: String,
-}
-impl GetPoolData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct GetSwapBaseInData {
-    pub pool_data: GetPoolData,
-    pub amount_in: u64,
-    pub minimum_amount_out: u64,
-    pub price_impact: u64,
-}
-impl GetSwapBaseInData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct GetSwapBaseOutData {
-    pub pool_data: GetPoolData,
-    pub max_amount_in: u64,
-    pub amount_out: u64,
-    pub price_impact: u64,
-}
-impl GetSwapBaseOutData {
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-    pub fn from_json(data: &str) -> Self {
-        serde_json::from_str(data).unwrap()
     }
 }
 
@@ -1318,12 +1129,7 @@ mod test {
 
     #[test]
     fn test_target_info_layout() {
-        let owner: [u64; 4] = [
-            0x123456789abcedf0,
-            0x123456789abced0f,
-            0x123456789abce0df,
-            0x123456789abc0edf,
-        ];
+        let owner: Pubkey = Pubkey::new_unique();
         let mut buy_orders: [TargetOrder; 50] = [TargetOrder::default(); 50];
         let mut buy_orders_data = [0u8; 8 * 2 * 50];
         let mut offset = 0;
@@ -1386,10 +1192,10 @@ mod test {
         // serialize original data
         let mut target_orders_data = [0u8; 2208];
         let mut offset = 0;
-        for i in 0..4 {
-            target_orders_data[offset..offset + 8].copy_from_slice(&owner[i].to_le_bytes());
-            offset += 8;
-        }
+
+        target_orders_data[offset..offset + 32].copy_from_slice(&owner.to_bytes());
+        offset += 32;
+
         target_orders_data[offset..offset + 8 * 2 * 50].copy_from_slice(&buy_orders_data);
         offset += 8 * 2 * 50;
         for i in 0..8 {
@@ -1464,9 +1270,8 @@ mod test {
             bytemuck::from_bytes(&target_orders_data[0..core::mem::size_of::<TargetOrders>()]);
         // data check
         let unpack_owner = unpack_data.owner;
-        for i in 0..4 {
-            assert_eq!(owner[i], unpack_owner[i]);
-        }
+        assert_eq!(owner, unpack_owner);
+
         let unpack_buy_orders = unpack_data.buy_orders;
         for i in 0..50 {
             let price = buy_orders[i].price;

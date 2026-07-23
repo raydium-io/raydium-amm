@@ -5,12 +5,7 @@
 #![allow(clippy::manual_range_contains)]
 
 use crate::{error::AmmError, state::AmmInfo};
-use serum_dex::{
-    matching::Side,
-    state::{EventView, MarketState, OpenOrders, ToAlignedBytes},
-};
-use solana_program::{account_info::AccountInfo, log::sol_log_compute_units, msg};
-use std::{cmp::Eq, convert::identity, convert::TryInto};
+use std::{cmp::Eq, convert::TryInto};
 use uint::construct_uint;
 
 construct_uint! {
@@ -238,85 +233,6 @@ impl Calculator {
             .unwrap();
         let ret: u64 = Self::to_u64(volume.as_u128()).unwrap();
         ret
-    }
-
-    pub fn calc_exact_vault_in_serum<'a>(
-        open_orders: &'a OpenOrders,
-        market_state: &'a Box<MarketState>,
-        event_q_account: &'a AccountInfo,
-        amm_open_account: &'a AccountInfo,
-    ) -> Result<(u64, u64), AmmError> {
-        let event_q = market_state.load_event_queue_mut(event_q_account).unwrap();
-        let mut native_pc_total = open_orders.native_pc_total;
-        let mut native_coin_total = open_orders.native_coin_total;
-        msg!("calc_exact len:{}", event_q.len());
-        sol_log_compute_units();
-        for event in event_q.iter() {
-            if identity(event.owner) != (*amm_open_account.key).to_aligned_bytes() {
-                continue;
-            }
-            // msg!("{:?}", event.as_view().unwrap());
-            match event.as_view().unwrap() {
-                EventView::Fill {
-                    side,
-                    maker,
-                    native_qty_paid,
-                    native_qty_received,
-                    native_fee_or_rebate: _,
-                    fee_tier: _,
-                    order_id: _,
-                    owner: _,
-                    owner_slot: _,
-                    client_order_id: _,
-                } => {
-                    match side {
-                        Side::Bid if maker => {
-                            native_pc_total -= native_qty_paid;
-                            native_coin_total += native_qty_received;
-                        }
-                        Side::Ask if maker => {
-                            native_coin_total -= native_qty_paid;
-                            native_pc_total += native_qty_received;
-                        }
-                        _ => (),
-                    };
-                }
-                _ => {
-                    continue;
-                }
-            }
-        }
-        sol_log_compute_units();
-        Ok((native_pc_total, native_coin_total))
-    }
-
-    pub fn calc_total_without_take_pnl<'a>(
-        pc_amount: u64,
-        coin_amount: u64,
-        open_orders: &'a OpenOrders,
-        amm: &'a AmmInfo,
-        market_state: &'a Box<MarketState>,
-        event_q_account: &'a AccountInfo,
-        amm_open_account: &'a AccountInfo,
-    ) -> Result<(u64, u64), AmmError> {
-        let (pc_total_in_serum, coin_total_in_serum) = Self::calc_exact_vault_in_serum(
-            open_orders,
-            market_state,
-            event_q_account,
-            amm_open_account,
-        )?;
-
-        let total_pc_without_take_pnl = pc_amount
-            .checked_add(pc_total_in_serum)
-            .ok_or(AmmError::CheckedAddOverflow)?
-            .checked_sub(amm.state_data.need_take_pnl_pc)
-            .ok_or(AmmError::CheckedSubOverflow)?;
-        let total_coin_without_take_pnl = coin_amount
-            .checked_add(coin_total_in_serum)
-            .ok_or(AmmError::CheckedAddOverflow)?
-            .checked_sub(amm.state_data.need_take_pnl_coin)
-            .ok_or(AmmError::CheckedSubOverflow)?;
-        Ok((total_pc_without_take_pnl, total_coin_without_take_pnl))
     }
 
     pub fn calc_total_without_take_pnl_no_orderbook<'a>(

@@ -2,22 +2,30 @@ use arrform::{arrform, ArrForm};
 use serde::{Deserialize, Serialize};
 use solana_program::{
     msg,
-    // entrypoint::ProgramResult,
+    // entrypoint::ProgramResult, // ProgramResult is not used here, so it is commented out
     pubkey::Pubkey,
 };
 
+// Define a safe, fixed buffer size for structured logging (Solana has limits on message length)
 pub const LOG_SIZE: usize = 256;
 
+/**
+ * @macro check_assert_eq
+ * @brief Checks if input and expected Pubkeys are equal. If not, logs the mismatch
+ * using base64 and returns the specified ProgramError.
+ */
 #[macro_export]
 macro_rules! check_assert_eq {
     ($input:expr, $expected:expr, $msg:expr, $err:expr) => {
         if $input != $expected {
+            // Log the mismatch of the two Pubkeys for easy debugging
             log_keys_mismatch(concat!($msg, " mismatch:"), $input, $expected);
             return Err($err.into());
         }
     };
 }
 
+/// Logs the mismatch details (Pubkey inputs and expected values) during an assertion failure.
 pub fn log_keys_mismatch(msg: &str, input: Pubkey, expected: Pubkey) {
     msg!(arrform!(
         LOG_SIZE,
@@ -29,8 +37,8 @@ pub fn log_keys_mismatch(msg: &str, input: Pubkey, expected: Pubkey) {
     .as_str());
 }
 
-/// LogType enum
-#[derive(Debug)]
+/// LogType enum defines the type of event being logged (e.g., Init, Deposit, Swap).
+#[derive(Debug, Clone, Copy)]
 pub enum LogType {
     Init,
     Deposit,
@@ -40,6 +48,7 @@ pub enum LogType {
 }
 
 impl LogType {
+    /// Converts a u8 discriminant into a LogType. Panics if the discriminant is invalid.
     pub fn from_u8(log_type: u8) -> Self {
         match log_type {
             0 => LogType::Init,
@@ -47,10 +56,12 @@ impl LogType {
             2 => LogType::Withdraw,
             3 => LogType::SwapBaseIn,
             4 => LogType::SwapBaseOut,
-            _ => unreachable!(),
+            // Changed unreachable!() to panic!() for safer handling of unexpected external data
+            _ => panic!("Invalid LogType discriminant: {}", log_type),
         }
     }
 
+    /// Converts a LogType into its u8 discriminant for serialization.
     pub fn into_u8(&self) -> u8 {
         match self {
             LogType::Init => 0u8,
@@ -61,6 +72,8 @@ impl LogType {
         }
     }
 }
+
+// --- Specific Log Structure Definitions (for AMM events) ---
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct InitLog {
@@ -144,19 +157,41 @@ pub struct SwapBaseOutLog {
     pub deduct_in: u64,
 }
 
+/**
+ * @function encode_ray_log
+ * @brief Serializes a log struct (T) using bincode, encodes it to base64,
+ * and emits it on-chain using solana_program::msg!
+ * @param log The serializable log struct.
+ */
 pub fn encode_ray_log<T: Serialize>(log: T) {
-    // encode
+    // 1. Serialize struct using bincode
     let bytes = bincode::serialize(&log).unwrap();
+
+    // 2. Allocate buffer for base64 encoding (4/3 multiplier + padding tolerance)
     let mut out_buf = Vec::new();
     out_buf.resize(bytes.len() * 4 / 3 + 4, 0);
+
+    // 3. Encode binary data to base64 string slice
     let bytes_written = base64::encode_config_slice(bytes, base64::STANDARD, &mut out_buf);
     out_buf.resize(bytes_written, 0);
+
+    // 4. Convert slice to string (unsafe is fine here since it comes from base64 encoding)
     let msg_str = unsafe { std::str::from_utf8_unchecked(&out_buf) };
+
+    // 5. Emit the final message on-chain
     msg!(arrform!(LOG_SIZE, "ray_log: {}", msg_str).as_str());
 }
 
+/**
+ * @function decode_ray_log
+ * @brief Decodes a base64 log string into the appropriate structured log struct.
+ * @param log The base64 encoded log string (usually read from transaction metadata).
+ */
 pub fn decode_ray_log(log: &str) {
+    // 1. Decode base64 string back to binary
     let bytes = base64::decode_config(log, base64::STANDARD).unwrap();
+
+    // 2. Use the first byte as the discriminant to determine the struct type
     match LogType::from_u8(bytes[0]) {
         LogType::Init => {
             let log: InitLog = bincode::deserialize(&bytes).unwrap();

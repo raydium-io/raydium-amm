@@ -3,7 +3,7 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(deprecated)]
 
-use crate::state::{AmmParams, Fees, LastOrderDistance, SimulateParams};
+use crate::state::{AmmParams, Fees};
 use arrayref::array_ref;
 use solana_program::{
     instruction::{AccountMeta, Instruction},
@@ -79,9 +79,7 @@ pub struct WithdrawInstruction {
 pub struct SetParamsInstruction {
     pub param: u8,
     pub value: Option<u64>,
-    pub new_pubkey: Option<Pubkey>,
     pub fees: Option<Fees>,
-    pub last_order_distance: Option<LastOrderDistance>,
 }
 
 #[repr(C)]
@@ -122,7 +120,7 @@ pub struct AdminCancelOrdersInstruction {
     pub limit: u16,
 }
 
-/// Update config acccount params
+/// Update config account params
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ConfigArgs {
@@ -167,27 +165,7 @@ pub enum AmmInstruction {
     Initialize2(InitializeInstruction2),
 
     ///   MonitorStep. To monitor place Amm order state machine turn around step by step.
-    ///
-    ///   0. `[]` Spl Token program id
-    ///   1. `[]` Rent program id
-    ///   2. `[]` Sys Clock id
-    ///   3. `[writable]` AMM Account
-    ///   4. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
-    ///   5. `[writable]` AMM open orders Account
-    ///   6. `[writable]` AMM target orders Account. To store plan orders infomations.
-    ///   7. `[writable]` AMM coin vault Account. Must be non zero, owned by $authority.
-    ///   8. `[writable]` AMM pc vault Account. Must be non zero, owned by $authority.
-    ///   9. `[]` Market program id
-    ///   10. `[writable]` Market Account. Market program is the owner.
-    ///   11. `[writable]` Market coin vault Account
-    ///   12. `[writable]` Market pc vault Account
-    ///   13. '[]` Market vault signer Account
-    ///   14. '[writable]` Market request queue Account
-    ///   15. `[writable]` Market event queue Account
-    ///   16. `[writable]` Market bids Account
-    ///   17. `[writable]` Market asks Account
-    ///   18. `[writable]` (optional) the (M)SRM account used for fee discounts
-    ///   19. `[writable]` (optional) the referrer pc account used for settle back referrer
+    #[deprecated(note = "Not supported yet")]
     MonitorStep(MonitorStepInstruction),
 
     ///   Deposit some tokens into the pool.  The output is a "pool" token representing ownership
@@ -234,49 +212,13 @@ pub enum AmmInstruction {
     Withdraw(WithdrawInstruction),
 
     ///   Migrate the associated market from Serum to OpenBook.
-    ///
-    ///   0. `[]` Spl Token program id
-    ///   1. `[]` Sys program id
-    ///   2. `[]` Rent program id
-    ///   3. `[writable]` AMM Account
-    ///   4. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
-    ///   5. `[writable]` AMM open orders Account
-    ///   6. `[writable]` AMM coin vault account owned by $authority,
-    ///   7. `[writable]` AMM pc vault account owned by $authority,
-    ///   8. `[writable]` AMM target orders Account
-    ///   9. `[]` Market program id
-    ///   10. `[writable]` Market Account. Market program is the owner.
-    ///   11. `[writable]` Market bids Account
-    ///   12. `[writable]` Market asks Account
-    ///   13. `[writable]` Market event queue Account
-    ///   14. `[writable]` Market coin vault Account
-    ///   15. `[writable]` Market pc vault Account
-    ///   16. '[]` Market vault signer Account
-    ///   17. '[writable]` AMM new open orders Account
-    ///   18. '[]` mew Market program id
-    ///   19. '[]` new Market market Account
-    ///   20. '[]` Admin Account
+    #[deprecated(note = "Not supported yet")]
     MigrateToOpenBook,
 
     ///   Set AMM params
     ///
-    ///   0. `[]` Spl Token program id
-    ///   1. `[writable]` AMM Account.
-    ///   2. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
-    ///   3. `[writable]` AMM open orders Account
-    ///   4. `[writable]` AMM target orders Account
-    ///   5. `[writable]` AMM coin vault account owned by $authority,
-    ///   6. `[writable]` AMM pc vault account owned by $authority,
-    ///   7. `[]` Market program id
-    ///   8. `[writable]` Market Account. Market program is the owner.
-    ///   9. `[writable]` Market coin vault Account
-    ///   10. `[writable]` Market pc vault Account
-    ///   11. '[]` Market vault signer Account
-    ///   12. `[writable]` Market event queue Account
-    ///   13. `[writable]` Market bids Account
-    ///   14. `[writable]` Market asks Account
-    ///   15. `[signer]` Admin Account
-    ///   16. `[]` (optional) New AMM open orders Account to replace old AMM open orders Account
+    ///   0. `[writable]` AMM Account.
+    ///   1. `[signer]` Admin Account
     SetParams(SetParamsInstruction),
 
     ///   Withdraw Pnl from pool by protocol
@@ -285,30 +227,16 @@ pub enum AmmInstruction {
     ///   1. `[writable]` AMM Account
     ///   2. `[]` AMM config Account, derived from `find_program_address(&[&&AMM_CONFIG_SEED])`.
     ///   3. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
-    ///   4. `[writable]` AMM open orders Account
     ///   5. `[writable]` AMM coin vault account to withdraw FROM,
     ///   6. `[writable]` AMM pc vault account to withdraw FROM,
     ///   7. `[writable]` User coin token Account to withdraw to
     ///   8. `[writable]` User pc token Account to withdraw to
     ///   9. `[signer]` User wallet account
     ///   10. `[writable]` AMM target orders Account
-    ///   11. `[]` Market program id
-    ///   12. `[writable]` Market Account. Market program is the owner.
-    ///   13. `[writable]` Market event queue Account
-    ///   14. `[writable]` Market coin vault Account
-    ///   15. `[writable]` Market pc vault Account
-    ///   16. '[]` Market vault signer Account
-    ///   17. `[]` (optional) the referrer pc account used for settle back referrer
     WithdrawPnl,
 
     ///   Withdraw (M)SRM from the (M)SRM Account used for fee discounts by admin
-    ///
-    ///   0. `[]` Spl Token program id
-    ///   1. `[]` AMM Account.
-    ///   2. `[signer]` Admin wallet Account
-    ///   3. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
-    ///   4. `[writable]` the (M)SRM Account withdraw from
-    ///   5. `[writable]` the (M)SRM Account withdraw to
+    #[deprecated(note = "Not supported yet")]
     WithdrawSrm(WithdrawSrmInstruction),
 
     /// Swap coin or pc from pool, base amount_in with a slippage of minimum_amount_out
@@ -360,8 +288,10 @@ pub enum AmmInstruction {
     ///   17. `[signer]` User wallet Account
     SwapBaseOut(SwapInstructionBaseOut),
 
+    #[deprecated(note = "Not supported yet")]
     SimulateInfo(SimulateInstruction),
 
+    #[deprecated(note = "Not supported yet")]
     AdminCancelOrders(AdminCancelOrdersInstruction),
 
     /// Create amm config account by admin
@@ -402,11 +332,6 @@ impl AmmInstruction {
             .split_first()
             .ok_or(ProgramError::InvalidInstructionData)?;
         Ok(match tag {
-            0 => {
-                let (nonce, rest) = Self::unpack_u8(rest)?;
-                let (open_time, _reset) = Self::unpack_u64(rest)?;
-                Self::Initialize(InitializeInstruction { nonce, open_time })
-            }
             1 => {
                 let (nonce, rest) = Self::unpack_u8(rest)?;
                 let (open_time, rest) = Self::unpack_u64(rest)?;
@@ -417,16 +342,6 @@ impl AmmInstruction {
                     open_time,
                     init_pc_amount,
                     init_coin_amount,
-                })
-            }
-            2 => {
-                let (plan_order_limit, rest) = Self::unpack_u16(rest)?;
-                let (place_order_limit, rest) = Self::unpack_u16(rest)?;
-                let (cancel_order_limit, _rest) = Self::unpack_u16(rest)?;
-                Self::MonitorStep(MonitorStepInstruction {
-                    plan_order_limit,
-                    place_order_limit,
-                    cancel_order_limit,
                 })
             }
             3 => {
@@ -461,24 +376,9 @@ impl AmmInstruction {
                     min_pc_amount,
                 })
             }
-            5 => Self::MigrateToOpenBook,
             6 => {
                 let (param, rest) = Self::unpack_u8(rest)?;
-                match AmmParams::from_u64(param as u64) {
-                    AmmParams::AmmOwner => {
-                        if rest.len() >= 32 {
-                            let new_pubkey = array_ref![rest, 0, 32];
-                            Self::SetParams(SetParamsInstruction {
-                                param,
-                                value: None,
-                                new_pubkey: Some(Pubkey::new_from_array(*new_pubkey)),
-                                fees: None,
-                                last_order_distance: None,
-                            })
-                        } else {
-                            return Err(ProgramError::InvalidInstructionData.into());
-                        }
-                    }
+                match AmmParams::from_u64(param as u64)? {
                     AmmParams::Fees => {
                         if rest.len() >= Fees::LEN {
                             let (fees, _rest) = rest.split_at(Fees::LEN);
@@ -486,41 +386,19 @@ impl AmmInstruction {
                             Self::SetParams(SetParamsInstruction {
                                 param,
                                 value: None,
-                                new_pubkey: None,
                                 fees: Some(fees),
-                                last_order_distance: None,
                             })
                         } else {
                             return Err(ProgramError::InvalidInstructionData.into());
                         }
                     }
-                    AmmParams::LastOrderDistance => {
-                        if rest.len() >= 16 {
-                            let (last_order_numerator, rest) = Self::unpack_u64(rest)?;
-                            let (last_order_denominator, _rest) = Self::unpack_u64(rest)?;
-                            Self::SetParams(SetParamsInstruction {
-                                param,
-                                value: None,
-                                new_pubkey: None,
-                                fees: None,
-                                last_order_distance: Some(LastOrderDistance {
-                                    last_order_numerator,
-                                    last_order_denominator,
-                                }),
-                            })
-                        } else {
-                            return Err(ProgramError::InvalidInstructionData.into());
-                        }
-                    }
-                    _ => {
+                    AmmParams::Status | AmmParams::State | AmmParams::SetOpenTime => {
                         if rest.len() >= 8 {
                             let (value, _rest) = Self::unpack_u64(rest)?;
                             Self::SetParams(SetParamsInstruction {
                                 param,
                                 value: Some(value),
-                                new_pubkey: None,
                                 fees: None,
-                                last_order_distance: None,
                             })
                         } else {
                             return Err(ProgramError::InvalidInstructionData.into());
@@ -529,10 +407,6 @@ impl AmmInstruction {
                 }
             }
             7 => Self::WithdrawPnl,
-            8 => {
-                let (amount, _rest) = Self::unpack_u64(rest)?;
-                Self::WithdrawSrm(WithdrawSrmInstruction { amount })
-            }
             9 => {
                 let (amount_in, rest) = Self::unpack_u64(rest)?;
                 let (minimum_amount_out, _rest) = Self::unpack_u64(rest)?;
@@ -540,10 +414,6 @@ impl AmmInstruction {
                     amount_in,
                     minimum_amount_out,
                 })
-            }
-            10 => {
-                let (nonce, _rest) = Self::unpack_u8(rest)?;
-                Self::PreInitialize(PreInitializeInstruction { nonce })
             }
             11 => {
                 let (max_amount_in, rest) = Self::unpack_u64(rest)?;
@@ -553,59 +423,21 @@ impl AmmInstruction {
                     amount_out,
                 })
             }
-            12 => {
-                let (param, rest) = Self::unpack_u8(rest)?;
-                match SimulateParams::from_u64(param as u64) {
-                    SimulateParams::PoolInfo | SimulateParams::RunCrankInfo => {
-                        Self::SimulateInfo(SimulateInstruction {
-                            param,
-                            swap_base_in_value: None,
-                            swap_base_out_value: None,
-                        })
-                    }
-                    SimulateParams::SwapBaseInInfo => {
-                        let (amount_in, rest) = Self::unpack_u64(rest)?;
-                        let (minimum_amount_out, _rest) = Self::unpack_u64(rest)?;
-                        let swap_base_in = Some(SwapInstructionBaseIn {
-                            amount_in,
-                            minimum_amount_out,
-                        });
-                        Self::SimulateInfo(SimulateInstruction {
-                            param,
-                            swap_base_in_value: swap_base_in,
-                            swap_base_out_value: None,
-                        })
-                    }
-                    SimulateParams::SwapBaseOutInfo => {
-                        let (max_amount_in, rest) = Self::unpack_u64(rest)?;
-                        let (amount_out, _rest) = Self::unpack_u64(rest)?;
-                        let swap_base_out = Some(SwapInstructionBaseOut {
-                            max_amount_in,
-                            amount_out,
-                        });
-                        Self::SimulateInfo(SimulateInstruction {
-                            param,
-                            swap_base_in_value: None,
-                            swap_base_out_value: swap_base_out,
-                        })
-                    }
-                }
-            }
-            13 => {
-                let (limit, _rest) = Self::unpack_u16(rest)?;
-                Self::AdminCancelOrders(AdminCancelOrdersInstruction { limit })
-            }
             14 => Self::CreateConfigAccount,
             15 => {
                 let (param, rest) = Self::unpack_u8(rest)?;
                 match param {
                     0 | 1 => {
-                        let pubkey = array_ref![rest, 0, 32];
-                        Self::UpdateConfigAccount(ConfigArgs {
-                            param,
-                            owner: Some(Pubkey::new_from_array(*pubkey)),
-                            create_pool_fee: None,
-                        })
+                        if rest.len() >= 32 {
+                            let pubkey = array_ref![rest, 0, 32];
+                            Self::UpdateConfigAccount(ConfigArgs {
+                                param,
+                                owner: Some(Pubkey::new_from_array(*pubkey)),
+                                create_pool_fee: None,
+                            })
+                        } else {
+                            return Err(ProgramError::InvalidInstructionData.into());
+                        }
                     }
                     2 => {
                         let (create_pool_fee, _rest) = Self::unpack_u64(rest)?;
@@ -636,7 +468,13 @@ impl AmmInstruction {
                     amount_out,
                 })
             }
-            _ => return Err(ProgramError::InvalidInstructionData.into()),
+            0 | 2 | 5 | 8 | 10 | 12 | 13 => {
+                // Not support instructions: 0, 2, 5, 8, 10, 12, 13.
+                unimplemented!("This instruction is not supported")
+            }
+            _ => {
+                return Err(ProgramError::InvalidInstructionData.into());
+            }
         })
     }
 
@@ -647,20 +485,6 @@ impl AmmInstruction {
                 .get(..1)
                 .and_then(|slice| slice.try_into().ok())
                 .map(u8::from_le_bytes)
-                .ok_or(ProgramError::InvalidInstructionData)?;
-            Ok((amount, rest))
-        } else {
-            Err(ProgramError::InvalidInstructionData.into())
-        }
-    }
-
-    fn unpack_u16(input: &[u8]) -> Result<(u16, &[u8]), ProgramError> {
-        if input.len() >= 2 {
-            let (amount, rest) = input.split_at(2);
-            let amount = amount
-                .get(..2)
-                .and_then(|slice| slice.try_into().ok())
-                .map(u16::from_le_bytes)
                 .ok_or(ProgramError::InvalidInstructionData)?;
             Ok((amount, rest))
         } else {
@@ -686,11 +510,6 @@ impl AmmInstruction {
     pub fn pack(&self) -> Result<Vec<u8>, ProgramError> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match &*self {
-            Self::Initialize(InitializeInstruction { nonce, open_time }) => {
-                buf.push(0);
-                buf.push(*nonce);
-                buf.extend_from_slice(&open_time.to_le_bytes());
-            }
             Self::Initialize2(InitializeInstruction2 {
                 nonce,
                 open_time,
@@ -702,16 +521,6 @@ impl AmmInstruction {
                 buf.extend_from_slice(&open_time.to_le_bytes());
                 buf.extend_from_slice(&init_pc_amount.to_le_bytes());
                 buf.extend_from_slice(&init_coin_amount.to_le_bytes());
-            }
-            Self::MonitorStep(MonitorStepInstruction {
-                plan_order_limit,
-                place_order_limit,
-                cancel_order_limit,
-            }) => {
-                buf.push(2);
-                buf.extend_from_slice(&plan_order_limit.to_le_bytes());
-                buf.extend_from_slice(&place_order_limit.to_le_bytes());
-                buf.extend_from_slice(&cancel_order_limit.to_le_bytes());
             }
             Self::Deposit(DepositInstruction {
                 max_coin_amount,
@@ -739,26 +548,10 @@ impl AmmInstruction {
                     buf.extend_from_slice(&min_pc_amount.unwrap().to_le_bytes());
                 }
             }
-            Self::MigrateToOpenBook => {
-                buf.push(5);
-            }
-            Self::SetParams(SetParamsInstruction {
-                param,
-                value,
-                new_pubkey,
-                fees,
-                last_order_distance,
-            }) => {
+            Self::SetParams(SetParamsInstruction { param, value, fees }) => {
                 buf.push(6);
                 buf.push(*param);
-                match AmmParams::from_u64(*param as u64) {
-                    AmmParams::AmmOwner => {
-                        let new_pubkey = match new_pubkey {
-                            Some(a) => a,
-                            None => return Err(ProgramError::InvalidInstructionData.into()),
-                        };
-                        buf.extend_from_slice(&new_pubkey.to_bytes());
-                    }
+                match AmmParams::from_u64(*param as u64).unwrap() {
                     AmmParams::Fees => {
                         let fees = match fees {
                             Some(a) => a,
@@ -767,14 +560,6 @@ impl AmmInstruction {
                         let mut fees_slice = [0u8; Fees::LEN];
                         Pack::pack_into_slice(fees, &mut fees_slice[..]);
                         buf.extend_from_slice(&fees_slice);
-                    }
-                    AmmParams::LastOrderDistance => {
-                        let distance = match last_order_distance {
-                            Some(a) => a,
-                            None => return Err(ProgramError::InvalidInstructionData.into()),
-                        };
-                        buf.extend_from_slice(&distance.last_order_numerator.to_le_bytes());
-                        buf.extend_from_slice(&distance.last_order_denominator.to_le_bytes());
                     }
                     _ => {
                         let value = match value {
@@ -788,10 +573,6 @@ impl AmmInstruction {
             Self::WithdrawPnl => {
                 buf.push(7);
             }
-            Self::WithdrawSrm(WithdrawSrmInstruction { amount }) => {
-                buf.push(8);
-                buf.extend_from_slice(&amount.to_le_bytes());
-            }
             Self::SwapBaseIn(SwapInstructionBaseIn {
                 amount_in,
                 minimum_amount_out,
@@ -800,10 +581,6 @@ impl AmmInstruction {
                 buf.extend_from_slice(&amount_in.to_le_bytes());
                 buf.extend_from_slice(&minimum_amount_out.to_le_bytes());
             }
-            Self::PreInitialize(PreInitializeInstruction { nonce }) => {
-                buf.push(10);
-                buf.push(*nonce);
-            }
             Self::SwapBaseOut(SwapInstructionBaseOut {
                 max_amount_in,
                 amount_out,
@@ -811,37 +588,6 @@ impl AmmInstruction {
                 buf.push(11);
                 buf.extend_from_slice(&max_amount_in.to_le_bytes());
                 buf.extend_from_slice(&amount_out.to_le_bytes());
-            }
-            Self::SimulateInfo(SimulateInstruction {
-                param,
-                swap_base_in_value,
-                swap_base_out_value,
-            }) => {
-                buf.push(12);
-                buf.push(*param);
-                match SimulateParams::from_u64(*param as u64) {
-                    SimulateParams::PoolInfo | SimulateParams::RunCrankInfo => {}
-                    SimulateParams::SwapBaseInInfo => {
-                        let swap_base_in = match swap_base_in_value {
-                            Some(a) => a,
-                            None => return Err(ProgramError::InvalidInstructionData.into()),
-                        };
-                        buf.extend_from_slice(&swap_base_in.amount_in.to_le_bytes());
-                        buf.extend_from_slice(&swap_base_in.minimum_amount_out.to_le_bytes());
-                    }
-                    SimulateParams::SwapBaseOutInfo => {
-                        let swap_base_out = match swap_base_out_value {
-                            Some(a) => a,
-                            None => return Err(ProgramError::InvalidInstructionData.into()),
-                        };
-                        buf.extend_from_slice(&swap_base_out.max_amount_in.to_le_bytes());
-                        buf.extend_from_slice(&swap_base_out.amount_out.to_le_bytes());
-                    }
-                }
-            }
-            Self::AdminCancelOrders(AdminCancelOrdersInstruction { limit }) => {
-                buf.push(13);
-                buf.extend_from_slice(&limit.to_le_bytes());
             }
             Self::CreateConfigAccount => {
                 buf.push(14);
@@ -892,6 +638,10 @@ impl AmmInstruction {
                 buf.push(17);
                 buf.extend_from_slice(&max_amount_in.to_le_bytes());
                 buf.extend_from_slice(&amount_out.to_le_bytes());
+            }
+            _ => {
+                // Not support instructions: 0, 2, 5, 8, 10, 12, 13, etc.
+                return Err(ProgramError::InvalidInstructionData.into());
             }
         }
         Ok(buf)
@@ -1301,87 +1051,18 @@ pub fn swap_base_out_v2(
     })
 }
 
-/// Creates a 'migrate_to_openbook' instruction.
-pub fn migrate_to_openbook(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    amm_target_orders: &Pubkey,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_bids: &Pubkey,
-    market_asks: &Pubkey,
-    market_event_queue: &Pubkey,
-    market_coin_vault: &Pubkey,
-    market_pc_vault: &Pubkey,
-    market_vault_signer: &Pubkey,
-
-    new_amm_open_orders: &Pubkey,
-    new_market_program: &Pubkey,
-    new_market: &Pubkey,
-
-    admin: &Pubkey,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::MigrateToOpenBook.pack()?;
-
-    let accounts = vec![
-        // spl token
-        AccountMeta::new_readonly(spl_token::id(), false),
-        AccountMeta::new_readonly(solana_program::system_program::id(), false),
-        AccountMeta::new_readonly(sysvar::rent::id(), false),
-        // amm
-        AccountMeta::new(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new(*amm_open_orders, false),
-        AccountMeta::new(*amm_coin_vault, false),
-        AccountMeta::new(*amm_pc_vault, false),
-        AccountMeta::new(*amm_target_orders, false),
-        // old market
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new(*market, false),
-        AccountMeta::new(*market_bids, false),
-        AccountMeta::new(*market_asks, false),
-        AccountMeta::new(*market_event_queue, false),
-        AccountMeta::new(*market_coin_vault, false),
-        AccountMeta::new(*market_pc_vault, false),
-        AccountMeta::new_readonly(*market_vault_signer, false),
-        // new market
-        AccountMeta::new(*new_amm_open_orders, false),
-        AccountMeta::new_readonly(*new_market_program, false),
-        AccountMeta::new_readonly(*new_market, false),
-        // admin
-        AccountMeta::new(*admin, true),
-    ];
-
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
 /// Creates a 'withdrawpnl' instruction
 pub fn withdrawpnl(
     amm_program: &Pubkey,
     amm_pool: &Pubkey,
     amm_config: &Pubkey,
     amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
     amm_coin_vault: &Pubkey,
     amm_pc_vault: &Pubkey,
     user_token_coin: &Pubkey,
     user_token_pc: &Pubkey,
     user_owner: &Pubkey,
     amm_target_orders: &Pubkey,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_event_queue: &Pubkey,
-    market_coin_vault: &Pubkey,
-    market_pc_vault: &Pubkey,
-    market_vault_signer: &Pubkey,
 ) -> Result<Instruction, ProgramError> {
     let data = AmmInstruction::WithdrawPnl.pack()?;
 
@@ -1392,20 +1073,12 @@ pub fn withdrawpnl(
         AccountMeta::new(*amm_pool, false),
         AccountMeta::new_readonly(*amm_config, false),
         AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new(*amm_open_orders, false),
         AccountMeta::new(*amm_coin_vault, false),
         AccountMeta::new(*amm_pc_vault, false),
         AccountMeta::new(*user_token_coin, false),
         AccountMeta::new(*user_token_pc, false),
         AccountMeta::new_readonly(*user_owner, true),
         AccountMeta::new(*amm_target_orders, false),
-        // serum
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new(*market, false),
-        AccountMeta::new_readonly(*market_event_queue, false),
-        AccountMeta::new(*market_coin_vault, false),
-        AccountMeta::new(*market_pc_vault, false),
-        AccountMeta::new_readonly(*market_vault_signer, false),
     ];
 
     Ok(Instruction {
@@ -1419,429 +1092,19 @@ pub fn withdrawpnl(
 pub fn set_params(
     amm_program: &Pubkey,
     amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
     admin: &Pubkey,
     param: u8,
     value: Option<u64>,
-    new_pubkey: Option<Pubkey>,
-    amm_target_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    amm_open_orders: &Pubkey,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_coin_vault: &Pubkey,
-    market_pc_vault: &Pubkey,
-    market_vault_signer: &Pubkey,
-    market_event_queue: &Pubkey,
-    market_bids: &Pubkey,
-    market_asks: &Pubkey,
-    new_amm_open_orders: Option<Pubkey>,
     fees: Option<Fees>,
-    last_order_distance: Option<LastOrderDistance>,
 ) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::SetParams(SetParamsInstruction {
-        param,
-        value,
-        new_pubkey,
-        fees,
-        last_order_distance,
-    })
-    .pack()?;
+    let data = AmmInstruction::SetParams(SetParamsInstruction { param, value, fees }).pack()?;
 
-    let mut accounts = vec![
-        // spl token
-        AccountMeta::new_readonly(spl_token::id(), false),
+    let accounts = vec![
         // amm
         AccountMeta::new(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new(*amm_open_orders, false),
-        AccountMeta::new(*amm_target_orders, false),
-        AccountMeta::new(*amm_coin_vault, false),
-        AccountMeta::new(*amm_pc_vault, false),
-        // market
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new(*market, false),
-        AccountMeta::new(*market_coin_vault, false),
-        AccountMeta::new(*market_pc_vault, false),
-        AccountMeta::new_readonly(*market_vault_signer, false),
-        AccountMeta::new(*market_event_queue, false),
-        AccountMeta::new(*market_bids, false),
-        AccountMeta::new(*market_asks, false),
         // admin
         AccountMeta::new_readonly(*admin, true),
     ];
-    if param == AmmParams::UpdateOpenOrder.into_u64() as u8 {
-        accounts.push(AccountMeta::new_readonly(
-            new_amm_open_orders.unwrap(),
-            false,
-        ));
-    }
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
-/// Creates a 'monitor_step' instruction.
-pub fn monitor_step(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
-    amm_target_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    amm_token_srm: Option<Pubkey>,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_coin_vault: &Pubkey,
-    market_pc_vault: &Pubkey,
-    market_vault_signer: &Pubkey,
-    market_request_queue: &Pubkey,
-    market_event_queue: &Pubkey,
-    market_bids: &Pubkey,
-    market_asks: &Pubkey,
-    referrer_token_pc: Option<Pubkey>,
-
-    plan_order_limit: u16,
-    place_order_limit: u16,
-    cancel_order_limit: u16,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::MonitorStep(MonitorStepInstruction {
-        plan_order_limit,
-        place_order_limit,
-        cancel_order_limit,
-    })
-    .pack()?;
-
-    let mut accounts = vec![
-        // spl
-        AccountMeta::new_readonly(spl_token::id(), false),
-        AccountMeta::new_readonly(sysvar::rent::id(), false),
-        AccountMeta::new_readonly(sysvar::clock::id(), false),
-        // amm
-        AccountMeta::new(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new(*amm_open_orders, false),
-        AccountMeta::new(*amm_target_orders, false),
-        AccountMeta::new(*amm_coin_vault, false),
-        AccountMeta::new(*amm_pc_vault, false),
-        // market
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new(*market, false),
-        AccountMeta::new(*market_coin_vault, false),
-        AccountMeta::new(*market_pc_vault, false),
-        AccountMeta::new_readonly(*market_vault_signer, false),
-        AccountMeta::new(*market_request_queue, false),
-        AccountMeta::new(*market_event_queue, false),
-        AccountMeta::new(*market_bids, false),
-        AccountMeta::new(*market_asks, false),
-    ];
-
-    if let Some(token_srm) = amm_token_srm {
-        accounts.push(AccountMeta::new(token_srm, false));
-        if let Some(referrer_pc) = referrer_token_pc {
-            accounts.push(AccountMeta::new(referrer_pc, false));
-        }
-    }
-
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
-/// Creates a 'withdrawsrm' instruction
-pub fn withdrawsrm(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    admin: &Pubkey,
-    token_srm: &Pubkey,
-    dest_token_srm: &Pubkey,
-    amount: u64,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::WithdrawSrm(WithdrawSrmInstruction { amount }).pack()?;
-
-    let accounts = vec![
-        // spl token
-        AccountMeta::new_readonly(spl_token::id(), false),
-        // amm
-        AccountMeta::new_readonly(*amm_pool, false),
-        AccountMeta::new_readonly(*admin, true),
-        AccountMeta::new_readonly(*amm_authority, false),
-        // market
-        AccountMeta::new(*token_srm, false),
-        AccountMeta::new(*dest_token_srm, false),
-    ];
-
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
-/// Create a 'simulate_get_pool_info' instruction
-pub fn simulate_get_pool_info(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    amm_lp_mint: &Pubkey,
-    market: &Pubkey,
-    market_event_queue: &Pubkey,
-    amm_target_orders: Option<Pubkey>,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::SimulateInfo(SimulateInstruction {
-        param: SimulateParams::PoolInfo as u8,
-        swap_base_in_value: None,
-        swap_base_out_value: None,
-    })
-    .pack()?;
-
-    let mut accounts = vec![
-        // amm
-        AccountMeta::new_readonly(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new_readonly(*amm_open_orders, false),
-        AccountMeta::new_readonly(*amm_coin_vault, false),
-        AccountMeta::new_readonly(*amm_pc_vault, false),
-        AccountMeta::new_readonly(*amm_lp_mint, false),
-        // market
-        AccountMeta::new_readonly(*market, false),
-        AccountMeta::new_readonly(*market_event_queue, false),
-    ];
-
-    if let Some(target) = amm_target_orders {
-        accounts.push(AccountMeta::new_readonly(target, false));
-    }
-
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
-/// Create a 'simulate_swap_base_in' instruction
-pub fn simulate_swap_base_in(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
-    amm_target_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    amm_lp_mint: &Pubkey,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_event_queue: &Pubkey,
-    user_token_source: &Pubkey,
-    user_token_destination: &Pubkey,
-    user_source_owner: &Pubkey,
-    amount_in: u64,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::SimulateInfo(SimulateInstruction {
-        param: SimulateParams::SwapBaseInInfo as u8,
-        swap_base_in_value: Some(SwapInstructionBaseIn {
-            amount_in,
-            minimum_amount_out: 0,
-        }),
-        swap_base_out_value: None,
-    })
-    .pack()?;
-
-    let accounts = vec![
-        // amm
-        AccountMeta::new_readonly(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new_readonly(*amm_open_orders, false),
-        AccountMeta::new_readonly(*amm_target_orders, false),
-        AccountMeta::new_readonly(*amm_coin_vault, false),
-        AccountMeta::new_readonly(*amm_pc_vault, false),
-        AccountMeta::new_readonly(*amm_lp_mint, false),
-        // market
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new_readonly(*market, false),
-        AccountMeta::new_readonly(*market_event_queue, false),
-        // user
-        AccountMeta::new_readonly(*user_token_source, false),
-        AccountMeta::new_readonly(*user_token_destination, false),
-        AccountMeta::new_readonly(*user_source_owner, true),
-    ];
-
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
-/// Create a 'simulate_swap_base_out' instruction
-pub fn simulate_swap_base_out(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
-    amm_target_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    amm_lp_mint: &Pubkey,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_event_queue: &Pubkey,
-    user_token_source: &Pubkey,
-    user_token_destination: &Pubkey,
-    user_source_owner: &Pubkey,
-    amount_out: u64,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::SimulateInfo(SimulateInstruction {
-        param: SimulateParams::SwapBaseOutInfo as u8,
-        swap_base_in_value: None,
-        swap_base_out_value: Some(SwapInstructionBaseOut {
-            max_amount_in: 0,
-            amount_out,
-        }),
-    })
-    .pack()?;
-
-    let accounts = vec![
-        // amm
-        AccountMeta::new_readonly(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new_readonly(*amm_open_orders, false),
-        AccountMeta::new_readonly(*amm_target_orders, false),
-        AccountMeta::new_readonly(*amm_coin_vault, false),
-        AccountMeta::new_readonly(*amm_pc_vault, false),
-        AccountMeta::new_readonly(*amm_lp_mint, false),
-        // market
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new_readonly(*market, false),
-        AccountMeta::new_readonly(*market_event_queue, false),
-        // user
-        AccountMeta::new_readonly(*user_token_source, false),
-        AccountMeta::new_readonly(*user_token_destination, false),
-        AccountMeta::new_readonly(*user_source_owner, true),
-    ];
-
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
-/// Create a 'simulate_run_crank' instruction
-pub fn simulate_run_crank(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
-    amm_target_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_bids: &Pubkey,
-    market_asks: &Pubkey,
-    market_event_queue: &Pubkey,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::SimulateInfo(SimulateInstruction {
-        param: SimulateParams::RunCrankInfo as u8,
-        swap_base_in_value: None,
-        swap_base_out_value: None,
-    })
-    .pack()?;
-
-    let accounts = vec![
-        // spl
-        AccountMeta::new_readonly(spl_token::id(), false),
-        AccountMeta::new_readonly(sysvar::clock::id(), false),
-        // amm
-        AccountMeta::new_readonly(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new_readonly(*amm_open_orders, false),
-        AccountMeta::new_readonly(*amm_target_orders, false),
-        AccountMeta::new_readonly(*amm_coin_vault, false),
-        AccountMeta::new_readonly(*amm_pc_vault, false),
-        // market
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new_readonly(*market, false),
-        AccountMeta::new_readonly(*market_bids, false),
-        AccountMeta::new_readonly(*market_asks, false),
-        AccountMeta::new_readonly(*market_event_queue, false),
-    ];
-
-    Ok(Instruction {
-        program_id: *amm_program,
-        accounts,
-        data,
-    })
-}
-
-pub fn admin_cancel_orders(
-    amm_program: &Pubkey,
-    amm_pool: &Pubkey,
-    amm_authority: &Pubkey,
-    amm_open_orders: &Pubkey,
-    amm_target_orders: &Pubkey,
-    amm_coin_vault: &Pubkey,
-    amm_pc_vault: &Pubkey,
-    amm_cancel_owner: &Pubkey,
-    amm_config: &Pubkey,
-    market_program: &Pubkey,
-    market: &Pubkey,
-    market_coin_vault: &Pubkey,
-    market_pc_vault: &Pubkey,
-    market_vault_signer: &Pubkey,
-    market_event_queue: &Pubkey,
-    market_bids: &Pubkey,
-    market_asks: &Pubkey,
-    amm_token_srm: Option<Pubkey>,
-    referrer_token_pc: Option<Pubkey>,
-    cancel_order_limit: u16,
-) -> Result<Instruction, ProgramError> {
-    let data = AmmInstruction::AdminCancelOrders(AdminCancelOrdersInstruction {
-        limit: cancel_order_limit,
-    })
-    .pack()?;
-
-    let mut accounts = vec![
-        // spl
-        AccountMeta::new_readonly(spl_token::id(), false),
-        // amm
-        AccountMeta::new_readonly(*amm_pool, false),
-        AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new(*amm_open_orders, false),
-        AccountMeta::new(*amm_target_orders, false),
-        AccountMeta::new(*amm_coin_vault, false),
-        AccountMeta::new(*amm_pc_vault, false),
-        AccountMeta::new_readonly(*amm_cancel_owner, true),
-        AccountMeta::new(*amm_config, false),
-        // market
-        AccountMeta::new_readonly(*market_program, false),
-        AccountMeta::new(*market, false),
-        AccountMeta::new(*market_coin_vault, false),
-        AccountMeta::new(*market_pc_vault, false),
-        AccountMeta::new_readonly(*market_vault_signer, false),
-        AccountMeta::new(*market_event_queue, false),
-        AccountMeta::new(*market_bids, false),
-        AccountMeta::new(*market_asks, false),
-    ];
-
-    if let Some(token_srm) = amm_token_srm {
-        accounts.push(AccountMeta::new(token_srm, false));
-        if let Some(referrer_pc) = referrer_token_pc {
-            accounts.push(AccountMeta::new(referrer_pc, false));
-        }
-    }
-
     Ok(Instruction {
         program_id: *amm_program,
         accounts,
