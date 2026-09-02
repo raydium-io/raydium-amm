@@ -28,9 +28,9 @@ use solana_program::{
     program_pack::Pack,
     pubkey::Pubkey,
     rent::Rent,
-    system_instruction,
     sysvar::Sysvar,
 };
+use solana_system_interface::instruction as system_instruction;
 
 use super::log::*;
 use arrform::{arrform, ArrForm};
@@ -319,7 +319,7 @@ impl Processor {
                 associated_seed,
                 &[bump_seed],
             ];
-            let rent = &Rent::from_account_info(rent_sysvar_account)?;
+            let rent = Rent::get()?;
             let required_lamports = rent
                 .minimum_balance(spl_token::state::Account::LEN)
                 .max(1)
@@ -411,7 +411,7 @@ impl Processor {
                 associated_seed,
                 &[bump_seed],
             ];
-            let rent = &Rent::from_account_info(rent_sysvar_account)?;
+            let rent = Rent::get()?;
             let required_lamports = rent
                 .minimum_balance(spl_token::state::Mint::LEN)
                 .max(1)
@@ -480,7 +480,7 @@ impl Processor {
         associated_token_account: &'a AccountInfo<'b>,
         user_wallet_account: &'a AccountInfo<'b>,
         system_program_account: &'a AccountInfo<'b>,
-        rent_sysvar_account: &'a AccountInfo<'b>,
+        _rent_sysvar_account: &'a AccountInfo<'b>,
         associated_seed: &[u8],
         data_size: usize,
     ) -> ProgramResult {
@@ -501,7 +501,7 @@ impl Processor {
                 associated_seed,
                 &[bump_seed],
             ];
-            let rent = &Rent::from_account_info(rent_sysvar_account)?;
+            let rent = Rent::get()?;
             let required_lamports = rent
                 .minimum_balance(data_size)
                 .max(1)
@@ -698,7 +698,7 @@ impl Processor {
         );
         check_assert_eq!(
             *system_program_info.key,
-            solana_program::system_program::id(),
+            solana_system_interface::program::id(),
             "sys_program",
             AmmError::InvalidSysProgramAddress
         );
@@ -2712,12 +2712,11 @@ impl Processor {
         let amm_config_info = next_account_info(account_info_iter)?;
         let pnl_owner_info = next_account_info(account_info_iter)?;
         let system_program_info = next_account_info(account_info_iter)?;
-        let rent_sysvar_info = next_account_info(account_info_iter)?;
 
         if !admin_info.is_signer || config_feature::amm_owner::id() != *admin_info.key {
             return Err(AmmError::InvalidSignAccount.into());
         }
-        if *system_program_info.key != solana_program::system_program::id() {
+        if *system_program_info.key != solana_system_interface::program::id() {
             return Err(AmmError::InvalidSysProgramAddress.into());
         }
 
@@ -2729,7 +2728,7 @@ impl Processor {
             return Err(AmmError::RepeatCreateConfigAccount.into());
         }
         let pda_signer_seeds: &[&[_]] = &[&AMM_CONFIG_SEED, &[bump_seed]];
-        let rent = &Rent::from_account_info(rent_sysvar_info)?;
+        let rent = Rent::get()?;
         let data_size = size_of::<AmmConfig>();
         let required_lamports = rent
             .minimum_balance(data_size)

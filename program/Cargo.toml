@@ -22,9 +22,10 @@ name = "raydium_amm"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-solana-program = "=2.1.0"
-spl-token = { version = "=7.0.0", features = ["no-entrypoint"] }
-spl-associated-token-account = { version = "6.0.0", features = [
+solana-program = "=3.0.0"
+solana-system-interface = { version = "=3.0.0", features = ["bincode"] }
+spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "8.0.0", features = [
     "no-entrypoint",
 ] }
 solana-security-txt = "1.1.1"

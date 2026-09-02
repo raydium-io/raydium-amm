@@ -685,7 +685,7 @@ pub fn initialize2(
         // spl & sys
         AccountMeta::new_readonly(spl_token::id(), false),
         AccountMeta::new_readonly(spl_associated_token_account::id(), false),
-        AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        AccountMeta::new_readonly(solana_system_interface::program::id(), false),
         AccountMeta::new_readonly(sysvar::rent::id(), false),
         // amm
         AccountMeta::new(*amm_pool, false),
@@ -1124,8 +1124,7 @@ pub fn create_config_account(
         AccountMeta::new(*admin, true),
         AccountMeta::new(*amm_config, false),
         AccountMeta::new_readonly(*pnl_owner, false),
-        AccountMeta::new_readonly(solana_program::system_program::id(), false),
-        AccountMeta::new_readonly(sysvar::rent::id(), false),
+        AccountMeta::new_readonly(solana_system_interface::program::id(), false),
     ];
     Ok(Instruction {
         program_id: *amm_program,
