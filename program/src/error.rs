@@ -145,6 +145,8 @@ pub enum AmmError {
     UnknownAmmError,
     #[error("Not allowed due to same mint.")]
     NotAllowed,
+    #[error("Lamports calculate error.")]
+    LamportsCalculateError,
 }
 
 impl From<AmmError> for ProgramError {

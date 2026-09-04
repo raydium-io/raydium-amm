@@ -2906,7 +2906,7 @@ impl Processor {
         if source_account_info.data_len() == spl_token::state::Account::LEN {
             // Token Account
 
-            let (is_native, amount) = {
+            let (is_native, amount_before_sync) = {
                 let data = source_account_info.try_borrow_data()?;
                 (
                     data[109] == 1,
@@ -2914,22 +2914,27 @@ impl Processor {
                 )
             };
             if is_native {
-                // Native token account, use UnwrapLamports
-                let rent = Rent::get()?;
-                let minimum_balance = rent.minimum_balance(source_account_info.data_len());
-                let excess_lamports = source_account_info
-                    .lamports()
-                    .checked_sub(minimum_balance)
-                    .ok_or(ProgramError::InsufficientFunds)?
-                    .checked_sub(amount)
+                // Native token account, use SyncNative and UnwrapLamports
+
+                // Because directly using UnwrapLamports would affect the native token amount,
+                // we first perform a SyncNative operation to convert all excess lamports into WSOL.
+                // And then compare the difference in the amount before and after the conversion,
+                // and finally perform the UnwrapLamports operation.
+                invoke(
+                    &spl_token::instruction::sync_native(
+                        token_program_info.key,
+                        source_account_info.key,
+                    )?,
+                    &[token_program_info.clone(), source_account_info.clone()],
+                )?;
+
+                let amount_after_sync = {
+                    let data = source_account_info.try_borrow_data()?;
+                    u64::from_le_bytes(data[64..72].try_into().unwrap())
+                };
+                let excess_lamports = amount_after_sync
+                    .checked_sub(amount_before_sync)
                     .ok_or(ProgramError::InsufficientFunds)?;
-                msg!(
-                    "cur:{}, amount:{}, min:{}, excess_lamports:{}",
-                    source_account_info.lamports(),
-                    amount,
-                    minimum_balance,
-                    excess_lamports
-                );
                 if excess_lamports == 0 {
                     return Ok(());
                 } else {
@@ -2941,7 +2946,15 @@ impl Processor {
                         amm_seed,
                         nonce,
                         Some(excess_lamports),
-                    )
+                    )?;
+                    let amount_after_unwrap = {
+                        let data = source_account_info.try_borrow_data()?;
+                        u64::from_le_bytes(data[64..72].try_into().unwrap())
+                    };
+                    // Check the amount unchanged before and after these operations.
+                    if amount_before_sync != amount_after_unwrap {
+                        return Err(AmmError::LamportsCalculateError.into());
+                    }
                 }
             } else {
                 // Not native token account, use WithdrawExcessLamports
@@ -2952,7 +2965,7 @@ impl Processor {
                     amm_authority_info.clone(),
                     amm_seed,
                     nonce,
-                )
+                )?;
             }
         } else {
             // Mint Account, use WithdrawExcessLamports
@@ -2963,8 +2976,9 @@ impl Processor {
                 amm_authority_info.clone(),
                 amm_seed,
                 nonce,
-            )
+            )?;
         }
+        return Ok(());
     }
 
     /// Processes an [Instruction](enum.Instruction.html).
