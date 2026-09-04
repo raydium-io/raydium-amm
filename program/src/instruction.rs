@@ -323,6 +323,14 @@ pub enum AmmInstruction {
     ///   6. `[writable]` User destination token Account.
     ///   7. `[signer]` User wallet Account
     SwapBaseOutV2(SwapInstructionBaseOut),
+
+    /// Collect excess lamports, including accounts for SPL tokens owned by authority and Program PDA.
+    ///
+    ///   0. `[signer]` Collect lamports wallet
+    ///   1. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
+    ///   2. `[]` Spl Token program id
+    ///   3. `..+M` `[writable]` M source lamports accounts.
+    WithdrawExcessLamports,
 }
 
 impl AmmInstruction {
@@ -468,6 +476,7 @@ impl AmmInstruction {
                     amount_out,
                 })
             }
+            18 => Self::WithdrawExcessLamports,
             0 | 2 | 5 | 8 | 10 | 12 | 13 => {
                 // Not support instructions: 0, 2, 5, 8, 10, 12, 13.
                 unimplemented!("This instruction is not supported")
@@ -638,6 +647,9 @@ impl AmmInstruction {
                 buf.push(17);
                 buf.extend_from_slice(&max_amount_in.to_le_bytes());
                 buf.extend_from_slice(&amount_out.to_le_bytes());
+            }
+            Self::WithdrawExcessLamports => {
+                buf.push(18);
             }
             _ => {
                 // Not support instructions: 0, 2, 5, 8, 10, 12, 13, etc.
@@ -1145,6 +1157,30 @@ pub fn update_config_account(
         AccountMeta::new_readonly(*admin, true),
         AccountMeta::new(*amm_config, false),
     ];
+    Ok(Instruction {
+        program_id: *amm_program,
+        accounts,
+        data,
+    })
+}
+
+/// Creates an 'withdraw_excess_lamports' instruction.
+pub fn withdraw_excess_lamports(
+    amm_program: &Pubkey,
+    collect_lamports: &Pubkey,
+    amm_authority: &Pubkey,
+    source_lamports_pubkeys: &[&Pubkey],
+) -> Result<Instruction, ProgramError> {
+    let data = AmmInstruction::WithdrawExcessLamports.pack()?;
+    let mut accounts = vec![
+        AccountMeta::new(*collect_lamports, true),
+        AccountMeta::new_readonly(*amm_authority, false),
+        AccountMeta::new_readonly(solana_system_interface::program::id(), false),
+    ];
+
+    for source_pubkey in source_lamports_pubkeys.iter() {
+        accounts.push(AccountMeta::new(**source_pubkey, false));
+    }
     Ok(Instruction {
         program_id: *amm_program,
         accounts,

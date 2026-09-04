@@ -1,6 +1,9 @@
 //! Program state invoker
 
-use solana_program::{account_info::AccountInfo, program_error::ProgramError};
+use solana_program::{
+    account_info::AccountInfo, instruction::AccountMeta, instruction::Instruction,
+    program_error::ProgramError, pubkey::Pubkey,
+};
 
 pub struct Invokers {}
 
@@ -211,5 +214,109 @@ impl Invokers {
             &[],
         )?;
         solana_program::program::invoke_signed(&ix, &[account, authority, token_program], signers)
+    }
+
+    // Construct spl `withdraw_excess_lamports` instruction
+    fn withdraw_excess_lamports_instruction(
+        token_program_id: &Pubkey,
+        source: &Pubkey,
+        destination: &Pubkey,
+        authority: &Pubkey,
+    ) -> Instruction {
+        Instruction {
+            program_id: *token_program_id,
+            accounts: vec![
+                AccountMeta::new(*source, false),
+                AccountMeta::new(*destination, false),
+                AccountMeta::new_readonly(*authority, true),
+            ],
+            data: vec![38],
+        }
+    }
+
+    // Construct spl `unwrap_lamports` instruction
+    fn unwrap_lamports_instruction(
+        token_program_id: &Pubkey,
+        source: &Pubkey,
+        destination: &Pubkey,
+        authority: &Pubkey,
+        amount: Option<u64>,
+    ) -> Instruction {
+        let mut data = Vec::with_capacity(10);
+        // TokenInstruction::UnwrapLamports = 45
+        data.push(45);
+        match amount {
+            Some(amount) => {
+                // COption::Some
+                data.push(1);
+
+                // u64 little endian
+                data.extend_from_slice(&amount.to_le_bytes());
+            }
+            None => {
+                // COption::None
+                data.push(0);
+            }
+        }
+
+        Instruction {
+            program_id: *token_program_id,
+            accounts: vec![
+                AccountMeta::new(*source, false),
+                AccountMeta::new(*destination, false),
+                AccountMeta::new_readonly(*authority, true),
+            ],
+            data,
+        }
+    }
+
+    /// Issue a spl_token `withdraw_excess_lamports` instruction.
+    pub fn withdraw_excess_lamports<'a>(
+        token_program: AccountInfo<'a>,
+        source: AccountInfo<'a>,
+        destination: AccountInfo<'a>,
+        authority: AccountInfo<'a>,
+        amm_seed: &[u8],
+        nonce: u8,
+    ) -> Result<(), ProgramError> {
+        let authority_signature_seeds = [amm_seed, &[nonce]];
+        let signers = &[&authority_signature_seeds[..]];
+        let ix = Self::withdraw_excess_lamports_instruction(
+            token_program.key,
+            source.key,
+            destination.key,
+            authority.key,
+        );
+        solana_program::program::invoke_signed(
+            &ix,
+            &[source, destination, authority, token_program],
+            signers,
+        )
+    }
+
+    /// Issue a spl_token `unwrap_lamports` instruction.
+    pub fn unwrap_lamports<'a>(
+        token_program: AccountInfo<'a>,
+        source: AccountInfo<'a>,
+        destination: AccountInfo<'a>,
+        authority: AccountInfo<'a>,
+        amm_seed: &[u8],
+        nonce: u8,
+        amount: Option<u64>,
+    ) -> Result<(), ProgramError> {
+        let authority_signature_seeds = [amm_seed, &[nonce]];
+        let signers = &[&authority_signature_seeds[..]];
+        let ix = Self::unwrap_lamports_instruction(
+            token_program.key,
+            source.key,
+            destination.key,
+            authority.key,
+            amount,
+        );
+        solana_program::program::invoke_signed(
+            &ix,
+            &[source, destination, authority, token_program],
+            signers,
+        )
     }
 }
