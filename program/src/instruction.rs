@@ -1175,7 +1175,7 @@ pub fn withdraw_excess_lamports(
     let mut accounts = vec![
         AccountMeta::new(*collect_lamports, true),
         AccountMeta::new_readonly(*amm_authority, false),
-        AccountMeta::new_readonly(solana_system_interface::program::id(), false),
+        AccountMeta::new_readonly(spl_token::id(), false),
     ];
 
     for source_pubkey in source_lamports_pubkeys.iter() {
@@ -1186,4 +1186,50 @@ pub fn withdraw_excess_lamports(
         accounts,
         data,
     })
+}
+
+#[cfg(test)]
+mod test_withdraw_excess_lamports_helper {
+    use super::*;
+
+    #[test]
+    fn test_withdraw_excess_lamports_helper_account_layout() {
+        // The processor (process_withdraw_excess_lamports) asserts that account
+        // index 2 is the SPL Token program. The client helper must therefore
+        // place spl_token::id() there, not the system program, otherwise every
+        // transaction built with this helper fails with InvalidSplTokenProgram.
+        let amm_program = Pubkey::new_unique();
+        let collect_lamports = Pubkey::new_unique();
+        let amm_authority = Pubkey::new_unique();
+        let source_a = Pubkey::new_unique();
+        let source_b = Pubkey::new_unique();
+
+        let ix = withdraw_excess_lamports(
+            &amm_program,
+            &collect_lamports,
+            &amm_authority,
+            &[&source_a, &source_b],
+        )
+        .unwrap();
+
+        // tag 18 round-trips through unpack
+        assert_eq!(
+            AmmInstruction::unpack(&ix.data).unwrap(),
+            AmmInstruction::WithdrawExcessLamports
+        );
+
+        assert_eq!(ix.accounts.len(), 3 + 2);
+        assert_eq!(ix.accounts[0].pubkey, collect_lamports);
+        assert!(ix.accounts[0].is_signer);
+        assert_eq!(ix.accounts[1].pubkey, amm_authority);
+        // index 2 must be the SPL Token program id, matching the processor's
+        // check_assert_eq!(*token_program_info.key, spl_token::id(), ...)
+        assert_eq!(ix.accounts[2].pubkey, spl_token::id());
+        assert!(!ix.accounts[2].is_signer);
+        // source accounts follow, all writable, non-signer
+        assert_eq!(ix.accounts[3].pubkey, source_a);
+        assert!(ix.accounts[3].is_writable);
+        assert_eq!(ix.accounts[4].pubkey, source_b);
+        assert!(ix.accounts[4].is_writable);
+    }
 }
