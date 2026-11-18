@@ -1,11 +1,50 @@
+# ==============================================================================
+# Cargo.toml for NEAR ASYNC WORKSPACE (Root Configuration)
+# This file defines the global settings for the Cargo workspace.
+# ==============================================================================
+
 [workspace]
+# Defines the list of crates (packages) that belong to this workspace.
 resolver = "2"
-members = ["program"]
+members = [
+    "program",
+    "near-async-derive" # Assuming the previously defined crate is a member
+]
+
+# Defines common properties shared by member crates.
+[workspace.package]
+version = "0.1.0"
+authors = ["Your Name <email@example.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/example/near-async"
+
+# Defines common dependencies (e.g., for proc-macros)
+[workspace.dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = "2.0"
+pretty_assertions = "1.4"
+
+# Defines common linting settings for the workspace
+[workspace.lints]
+workspace = true
+
+# ==============================================================================
+# Release Profile Optimization (High Performance)
+# ==============================================================================
 
 [profile.release]
+# Enable overflow checks, crucial for security and debugging panics on overflow
 overflow-checks = true
+# Link Time Optimization: Enables whole-program optimization for better performance.
 lto = "fat"
-codegen-units = 1
+# Limits the number of compilation units for optimization (smaller number = better optimization, slower compile)
+codegen-units = 1 
+
+# Override settings specifically for the build dependencies of the release profile.
+# This ensures that tools like procedural macros (which run during compilation)
+# are compiled with maximum speed (opt-level 3) but minimum overhead.
 [profile.release.build-override]
 opt-level = 3
 incremental = false
